@@ -12,12 +12,14 @@ from datetime import datetime
 import requests
 from seleniumbase import SB
 
+
 # ============================================================
 #  工具函数
 # ============================================================
 
 def log(message: str):
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {message}", flush=True)
+
 
 def mask_email(email: str) -> str:
     if '@' in email:
@@ -27,54 +29,56 @@ def mask_email(email: str) -> str:
         return f"{name}@{domain}"
     return email[:2] + '****'
 
+
 def beijing_time_str() -> str:
     local_time = time.gmtime(time.time() + 8 * 3600)
     return time.strftime("%Y-%m-%d %H:%M:%S", local_time)
 
+
 # ============================================================
-#  配置管理
+#  配置管理（IceHost 专用默认值，使用 .strip() or 模式防止空 Secret 覆盖）
 # ============================================================
 
 class Config:
-    # 目标站点
-    BASE_URL        = os.environ.get("BASE_URL", "")
+    # 目标站点（IceHost 默认）
+    BASE_URL        = os.environ.get("BASE_URL", "").strip() or "https://dash.icehost.pl"
     LOGIN_PATH      = os.environ.get("LOGIN_PATH", "").strip() or "/login"
     DASHBOARD_PATH  = os.environ.get("DASHBOARD_PATH", "").strip() or "/"
 
     # 账号密码登录
-    EMAIL    = os.environ.get("EMAIL", "")
-    PASSWORD = os.environ.get("PASSWORD", "")
+    EMAIL    = os.environ.get("EMAIL", "").strip()
+    PASSWORD = os.environ.get("PASSWORD", "").strip()
 
-    # Cookie 登录
+    # Cookie 登录（IceHost Laravel remember_web_ 持久登录 Cookie）
     COOKIE_NAME   = os.environ.get("COOKIE_NAME", "").strip() or "remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d"
-    COOKIE_VALUE  = os.environ.get("COOKIE_VALUE", "")
+    COOKIE_VALUE  = os.environ.get("COOKIE_VALUE", "").strip()
     COOKIE_DOMAIN = os.environ.get("COOKIE_DOMAIN", "").strip() or "dash.icehost.pl"
 
     # Discord OAuth 登录
-    DISCORD_TOKEN        = os.environ.get("DISCORD_TOKEN", "")
-    DISCORD_CLIENT_ID    = os.environ.get("DISCORD_CLIENT_ID", "")
-    DISCORD_REDIRECT_URI = os.environ.get("DISCORD_REDIRECT_URI", "")
-    DISCORD_LOGIN_PATH   = os.environ.get("DISCORD_LOGIN_PATH", "")
+    DISCORD_TOKEN        = os.environ.get("DISCORD_TOKEN", "").strip()
+    DISCORD_CLIENT_ID    = os.environ.get("DISCORD_CLIENT_ID", "").strip()
+    DISCORD_REDIRECT_URI = os.environ.get("DISCORD_REDIRECT_URI", "").strip()
+    DISCORD_LOGIN_PATH   = os.environ.get("DISCORD_LOGIN_PATH", "").strip() or "/login/discord"
 
     # Cookie 自动更新到 GitHub Secrets
-    GH_TOKEN       = os.environ.get("GH_TOKEN", "")
+    GH_TOKEN       = os.environ.get("GH_TOKEN", "").strip()
     GH_SECRET_NAME = os.environ.get("GH_SECRET_NAME", "").strip() or "COOKIE_VALUE"
 
     # Telegram 通知
-    TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN", "")
-    TG_CHAT_ID   = os.environ.get("TG_CHAT_ID", "")
+    TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN", "").strip()
+    TG_CHAT_ID   = os.environ.get("TG_CHAT_ID", "").strip()
 
     # 代理
     IS_PROXY     = os.environ.get("IS_PROXY", "false").lower() == "true"
     PROXY_SERVER = os.environ.get("PROXY_SERVER", "").strip() or "http://127.0.0.1:1080"
-    NODE_LINK    = os.environ.get("NODE_LINK", "")
+    NODE_LINK    = os.environ.get("NODE_LINK", "").strip()
 
     # 浏览器
     HEADLESS = os.environ.get("HEADLESS", "false").lower() == "true"
 
     # 通知显示
-    PLATFORM_NAME  = os.environ.get("PLATFORM_NAME", "Unknown Platform")
-    PLATFORM_FLAG  = os.environ.get("PLATFORM_FLAG", "").strip() or "🏳️"
+    PLATFORM_NAME  = os.environ.get("PLATFORM_NAME", "").strip() or "IceHost"
+    PLATFORM_FLAG  = os.environ.get("PLATFORM_FLAG", "").strip() or "🧊"
 
     # Cookie 更新阈值（天）
     COOKIE_UPDATE_THRESHOLD_DAYS = int(os.environ.get("COOKIE_UPDATE_THRESHOLD_DAYS", "3"))
@@ -84,7 +88,7 @@ class Config:
         has_credential = False
         if cls.COOKIE_VALUE:
             has_credential = True
-            log(f"✅ 配置了 Cookie 登录凭证 (Cookie名: {cls.COOKIE_NAME})")
+            log("✅ 配置了 Cookie 登录凭证")
         if cls.EMAIL and cls.PASSWORD:
             has_credential = True
             log("✅ 配置了账号密码登录凭证")
@@ -107,6 +111,7 @@ class Config:
     def dashboard_url(cls) -> str:
         return f"{cls.BASE_URL}{cls.DASHBOARD_PATH}"
 
+
 # ============================================================
 #  浏览器工具
 # ============================================================
@@ -121,6 +126,7 @@ def get_current_ip() -> str:
     except Exception as e:
         log(f"❌ 获取出口IP失败: {e}")
         return "获取失败"
+
 
 def js_fill_input(sb, selector: str, text: str):
     safe_text = text.replace('\\', '\\\\').replace('"', '\\"')
@@ -138,6 +144,7 @@ def js_fill_input(sb, selector: str, text: str):
         el.dispatchEvent(new Event('change', {{ bubbles: true }}));
     }})()
     """)
+
 
 def _activate_window():
     for cls in ["chrome", "chromium", "Chromium", "Chrome", "google-chrome"]:
@@ -158,6 +165,7 @@ def _activate_window():
     except Exception:
         pass
 
+
 def xdotool_click(x: int, y: int):
     _activate_window()
     try:
@@ -167,6 +175,7 @@ def xdotool_click(x: int, y: int):
         subprocess.run(["xdotool", "click", "1"], timeout=2, stderr=subprocess.DEVNULL)
     except Exception:
         os.system(f"xdotool mousemove {x} {y} click 1 2>/dev/null")
+
 
 _WININFO_JS = """
 (function(){
@@ -179,6 +188,7 @@ _WININFO_JS = """
 })()
 """
 
+
 def screen_to_abs(sb, cx: int, cy: int) -> tuple:
     try:
         wi = sb.execute_script(_WININFO_JS)
@@ -189,13 +199,15 @@ def screen_to_abs(sb, cx: int, cy: int) -> tuple:
     ay = cy + wi["sy"] + bar
     return ax, ay
 
+
 # ============================================================
-#  代理配置（sing-box，支持 VMess / VLESS / SS / Trojan / 订阅链接）
+#  代理配置（sing-box，支持 VMess / VLESS / SS / Trojan / Hysteria2 / 订阅链接）
 # ============================================================
 
 SINGBOX_BIN   = os.path.join(os.getcwd(), "sing-box")
 SINGBOX_CONFIG = os.path.join(os.getcwd(), "sing-box-config.json")
 SINGBOX_LOG   = os.path.join(os.getcwd(), "sing-box.log")
+
 
 def _decode_base64(s: str) -> str:
     s = s.strip()
@@ -210,6 +222,7 @@ def _decode_base64(s: str) -> str:
         except Exception:
             return ""
 
+
 def _parse_vmess(link: str) -> dict:
     raw = link.replace("vmess://", "").strip()
     decoded = _decode_base64(raw)
@@ -219,6 +232,7 @@ def _parse_vmess(link: str) -> dict:
         return json.loads(decoded)
     except Exception:
         return {}
+
 
 def _parse_ss(link: str) -> dict:
     link = link.replace("ss://", "").strip()
@@ -240,17 +254,28 @@ def _parse_ss(link: str) -> dict:
                     "method": method, "id": "", "type": "ss"}
     return {}
 
+
 def _parse_trojan(link: str) -> dict:
     link = link.replace("trojan://", "").strip()
     if "@" not in link:
         return {}
     password, rest = link.split("@", 1)
     rest = rest.split("#")[0]
-    if ":" in rest:
-        server, port = rest.split(":", 1)
-        return {"v": "2", "ps": "trojan", "add": server, "port": port,
+    params = {}
+    if "?" in rest:
+        addr_part, query_part = rest.split("?", 1)
+        params = dict(urllib.parse.parse_qsl(query_part))
+    else:
+        addr_part = rest
+    if ":" in addr_part:
+        server, port = addr_part.split(":", 1)
+        result = {"v": "2", "ps": "trojan", "add": server, "port": port,
                 "id": password, "type": "trojan"}
+        if params.get("sni"):
+            result["sni"] = params.get("sni")
+        return result
     return {}
+
 
 def _parse_vless(link: str) -> dict:
     link = link.replace("vless://", "").strip()
@@ -274,6 +299,37 @@ def _parse_vless(link: str) -> dict:
                 "spx": params.get("spx", "")}
     return {}
 
+
+def _parse_hysteria2(link: str) -> dict:
+    """解析 hysteria2:// 或 hy2:// 链接"""
+    raw = link
+    if raw.startswith("hysteria2://"):
+        raw = raw[len("hysteria2://"):]
+    elif raw.startswith("hy2://"):
+        raw = raw[len("hy2://"):]
+    else:
+        return {}
+    raw = raw.strip()
+    if "@" not in raw:
+        return {}
+    password, rest = raw.split("@", 1)
+    rest = rest.split("#")[0]
+    params = {}
+    if "?" in rest:
+        addr_part, query_part = rest.split("?", 1)
+        params = dict(urllib.parse.parse_qsl(query_part))
+    else:
+        addr_part = rest
+    if ":" in addr_part:
+        server, port = addr_part.split(":", 1)
+        return {"v": "2", "ps": "hysteria2", "add": server, "port": port,
+                "id": password, "type": "hysteria2",
+                "security": params.get("security", "tls"),
+                "sni": params.get("sni", ""),
+                "insecure": params.get("insecure", "0")}
+    return {}
+
+
 def _parse_single_link(link: str) -> dict:
     link = link.strip()
     if link.startswith("vmess://"):
@@ -284,7 +340,10 @@ def _parse_single_link(link: str) -> dict:
         return _parse_trojan(link)
     elif link.startswith("vless://"):
         return _parse_vless(link)
+    elif link.startswith("hysteria2://") or link.startswith("hy2://"):
+        return _parse_hysteria2(link)
     return {}
+
 
 def _parse_subscription(url: str) -> list:
     proxies = {"http": Config.PROXY_SERVER, "https": Config.PROXY_SERVER} if Config.IS_PROXY else None
@@ -302,6 +361,7 @@ def _parse_subscription(url: str) -> list:
     except Exception as e:
         log(f"❌ 订阅拉取失败: {e}")
         return []
+
 
 def parse_node_link(link: str) -> list:
     link = link.strip()
@@ -324,6 +384,7 @@ def parse_node_link(link: str) -> list:
                     nodes.append(n)
     return nodes
 
+
 def _build_singbox_outbounds(nodes: list) -> list:
     outbounds = []
     for idx, node in enumerate(nodes):
@@ -341,18 +402,21 @@ def _build_singbox_outbounds(nodes: list) -> list:
             elif net == "grpc":
                 outbounds[-1]["transport"] = {"type": "grpc", "service_name": node.get("path", "")}
         elif ntype == "vless":
+            tls_obj = None
+            if node.get("security", "") == "tls" or node.get("flow", ""):
+                tls_obj = {"enabled": True,
+                           "server_name": node.get("sni", "") or node.get("add", ""),
+                           "utls": {"enabled": True, "fingerprint": node.get("fp", "chrome")}}
+                if node.get("pbk"):
+                    tls_obj["reality"] = {"enabled": True,
+                        "public_key": node.get("pbk", ""), "short_id": node.get("sid", "")}
             outbounds.append({"type": "vless", "tag": tag,
                 "server": node.get("add", ""), "server_port": int(node.get("port", 0)),
                 "uuid": node.get("id", ""), "flow": node.get("flow", ""),
-                "tls": {"enabled": node.get("security", "") == "tls",
-                    "server_name": node.get("sni", ""),
-                    "utls": {"enabled": True, "fingerprint": node.get("fp", "chrome")}}
-                    if node.get("security", "") == "tls" or node.get("flow", "") else None,
+                "tls": tls_obj,
                 "transport": {}})
             if node.get("pbk"):
                 outbounds[-1]["packet_encoding"] = "xudp"
-                outbounds[-1]["tls"]["reality"] = {"enabled": True,
-                    "public_key": node.get("pbk", ""), "short_id": node.get("sid", "")}
         elif ntype in ("shadowsocks", "ss"):
             outbounds.append({"type": "shadowsocks", "tag": tag,
                 "server": node.get("add", ""), "server_port": int(node.get("port", 0)),
@@ -362,8 +426,19 @@ def _build_singbox_outbounds(nodes: list) -> list:
             outbounds.append({"type": "trojan", "tag": tag,
                 "server": node.get("add", ""), "server_port": int(node.get("port", 0)),
                 "password": node.get("id", node.get("password", "")),
-                "tls": {"enabled": True, "server_name": node.get("add", "")}})
+                "tls": {"enabled": True, "server_name": node.get("sni", "") or node.get("add", "")}})
+        elif ntype == "hysteria2":
+            tls_config = {"enabled": True}
+            if node.get("sni"):
+                tls_config["server_name"] = node.get("sni")
+            if str(node.get("insecure", "0")) in ("1", "true"):
+                tls_config["insecure"] = True
+            outbounds.append({"type": "hysteria2", "tag": tag,
+                "server": node.get("add", ""), "server_port": int(node.get("port", 0)),
+                "password": node.get("id", ""),
+                "tls": tls_config})
     return [o for o in outbounds if o.get("server") and o.get("server_port")]
+
 
 def generate_singbox_config(nodes: list) -> str:
     outbounds = _build_singbox_outbounds(nodes)
@@ -381,6 +456,7 @@ def generate_singbox_config(nodes: list) -> str:
     with open(SINGBOX_CONFIG, "w", encoding="utf-8") as f:
         json.dump(config, f, ensure_ascii=False, indent=2)
     return SINGBOX_CONFIG
+
 
 def download_singbox() -> bool:
     if os.path.exists(SINGBOX_BIN) and os.access(SINGBOX_BIN, os.X_OK):
@@ -408,10 +484,27 @@ def download_singbox() -> bool:
         log(f"❌ sing-box 下载失败: {e}")
         return False
 
+
+def _is_singbox_running() -> bool:
+    """检测 sing-box 是否已经在运行（可能由 workflow 脚本启动）"""
+    try:
+        result = subprocess.run(["pgrep", "-f", "sing-box"], capture_output=True, timeout=3)
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
 def start_singbox() -> bool:
+    # 如果 sing-box 已经在运行（由 workflow 脚本启动），直接使用
+    if _is_singbox_running():
+        log("✅ 检测到 sing-box 已在运行（由 workflow 脚本启动），直接使用")
+        return True
+
     if not Config.NODE_LINK:
         log("ℹ️  未配置 NODE_LINK，跳过代理启动")
         return False
+
+    # sing-box 未运行，尝试自己启动
     nodes = parse_node_link(Config.NODE_LINK)
     if not nodes:
         log("❌ 未能解析出有效节点")
@@ -434,13 +527,17 @@ def start_singbox() -> bool:
         log(f"❌ sing-box 启动失败: {e}")
         return False
 
+
 def stop_singbox():
+    # 如果 sing-box 由 workflow 脚本启动，不要停止它（让 workflow 清理步骤处理）
+    # 这里只停止由本脚本启动的 sing-box
     try:
         subprocess.run(["pkill", "-f", "sing-box"], stderr=subprocess.DEVNULL)
         time.sleep(1)
         log("🧹 sing-box 已停止")
     except Exception:
         pass
+
 
 # ============================================================
 #  Cloudflare 验证（6 种策略逐一尝试）
@@ -538,12 +635,14 @@ _MOUSE_MOVE_JS = """
 })()
 """
 
+
 def is_cloudflare_present(sb) -> bool:
     try:
         src = (sb.get_page_source() or "").lower()
         return any(x in src for x in _CF_INDICATORS)
     except Exception:
         return False
+
 
 def is_turnstile_solved(sb) -> bool:
     try:
@@ -557,6 +656,7 @@ def is_turnstile_solved(sb) -> bool:
     except Exception:
         return False
 
+
 def _cf_wait_silent(sb, timeout: int = 30) -> bool:
     log("🔍 策略1: 静默等待 Cloudflare 自动通过...")
     start = time.time()
@@ -567,6 +667,7 @@ def _cf_wait_silent(sb, timeout: int = 30) -> bool:
         time.sleep(1)
     log("⚠️ 静默等待超时")
     return False
+
 
 def _cf_uc_gui_captcha(sb, max_attempts: int = 3) -> bool:
     log("🔍 策略2: SeleniumBase uc_gui_click_captcha...")
@@ -582,6 +683,7 @@ def _cf_uc_gui_captcha(sb, max_attempts: int = 3) -> bool:
             time.sleep(2)
     log("❌ uc_gui_click_captcha 策略失败")
     return False
+
 
 def _cf_xdotool_click(sb, max_attempts: int = 6) -> bool:
     log("🔍 策略3: xdotool 物理点击 Turnstile 复选框...")
@@ -612,6 +714,7 @@ def _cf_xdotool_click(sb, max_attempts: int = 6) -> bool:
     log("❌ xdotool 策略失败")
     return False
 
+
 def _cf_seleniumbase_click(sb, max_attempts: int = 5) -> bool:
     log("🔍 策略4: SeleniumBase 原生点击 iframe...")
     for attempt in range(max_attempts):
@@ -632,6 +735,7 @@ def _cf_seleniumbase_click(sb, max_attempts: int = 5) -> bool:
     log("❌ SeleniumBase 点击策略失败")
     return False
 
+
 def _cf_js_click_all(sb, max_attempts: int = 3) -> bool:
     log("🔍 策略5: JS 遍历点击所有可疑元素...")
     for attempt in range(max_attempts):
@@ -650,6 +754,7 @@ def _cf_js_click_all(sb, max_attempts: int = 3) -> bool:
     log("❌ JS 点击策略失败")
     return False
 
+
 def _cf_random_mouse(sb, duration: int = 10) -> bool:
     log("🔍 策略6: 随机鼠标移动模拟真人行为...")
     start = time.time()
@@ -664,6 +769,7 @@ def _cf_random_mouse(sb, duration: int = 10) -> bool:
         time.sleep(0.3)
     log("❌ 随机移动策略失败")
     return False
+
 
 def solve_cloudflare(sb) -> bool:
     """多策略逐一尝试通过 Cloudflare 验证"""
@@ -691,6 +797,7 @@ def solve_cloudflare(sb) -> bool:
     log("\n❌ 所有策略均未能通过 Cloudflare 验证")
     return False
 
+
 # ============================================================
 #  登录模块（Cookie / 账号密码 / Discord OAuth + Cookie 持久化）
 # ============================================================
@@ -702,8 +809,19 @@ LOGIN_METHOD_DISCORD  = "Discord OAuth"
 _current_login_method = LOGIN_METHOD_COOKIE
 STATE_RE = re.compile(r"[?&]state=([^&]+)")
 
+# IceHost 登录表单用户名输入框的多种可能选择器
+_USERNAME_SELECTORS = [
+    'input[name="username"]',
+    'input[name="email"]',
+    'input[name="Email"]',
+    'input[type="email"]',
+    'input[type="text"]',
+]
+
+
 def get_login_method() -> str:
     return _current_login_method
+
 
 def get_cookie_value(sb, name: str):
     try:
@@ -717,6 +835,7 @@ def get_cookie_value(sb, name: str):
         pass
     return None, None
 
+
 def should_update_cookie(new_value, old_value, expiry_dt) -> bool:
     if new_value is None:
         return False
@@ -727,6 +846,7 @@ def should_update_cookie(new_value, old_value, expiry_dt) -> bool:
         if remaining < Config.COOKIE_UPDATE_THRESHOLD_DAYS * 24 * 3600:
             return True
     return False
+
 
 def update_github_secret(secret_name: str, new_value: str) -> bool:
     if not new_value:
@@ -749,6 +869,7 @@ def update_github_secret(secret_name: str, new_value: str) -> bool:
         log(f"❌ 异常: {e}")
         return False
 
+
 def save_cookie_to_github(sb) -> bool:
     if not Config.GH_TOKEN or not Config.GH_SECRET_NAME:
         log("ℹ️  未配置 GH_TOKEN 或 GH_SECRET_NAME，跳过自动更新 Cookie")
@@ -759,17 +880,20 @@ def save_cookie_to_github(sb) -> bool:
     log("✅ Cookie 无需更新")
     return True
 
+
 def login_by_cookie(sb) -> bool:
     global _current_login_method
     if not Config.COOKIE_VALUE:
         log("ℹ️  未配置 Cookie，跳过 Cookie 登录")
         return False
-    log(f"🍪 尝试 Cookie 登录 (Cookie名: {Config.COOKIE_NAME})...")
+    log("🍪 尝试 Cookie 登录...")
     try:
+        # 先打开站点，让浏览器建立域名上下文
         sb.open(Config.BASE_URL)
         sb.wait_for_ready_state_complete()
         time.sleep(2)
 
+        # 设置 Cookie（带完整属性）
         cookie_domain = Config.COOKIE_DOMAIN or urllib.parse.urlparse(Config.BASE_URL).hostname
         sb.add_cookie({
             "name": Config.COOKIE_NAME,
@@ -781,10 +905,12 @@ def login_by_cookie(sb) -> bool:
         })
         log(f"✅ Cookie 已设置: {Config.COOKIE_NAME} (domain={cookie_domain})")
 
+        # 刷新页面，让 Cookie 生效
         sb.refresh()
         sb.wait_for_ready_state_complete()
         time.sleep(3)
 
+        # 处理 Cloudflare
         if is_cloudflare_present(sb):
             log("🔒 遇到 Cloudflare，尝试通过...")
             if not solve_cloudflare(sb):
@@ -792,9 +918,11 @@ def login_by_cookie(sb) -> bool:
                 return False
             time.sleep(2)
 
+        # 检查是否仍在登录页
         current_url = sb.get_current_url()
         log(f"📝 当前URL: {current_url}")
 
+        # 等待可能的 Laravel remember_web 重定向
         for _ in range(10):
             url_lower = sb.get_current_url().lower()
             if "login" not in url_lower and Config.LOGIN_PATH not in sb.get_current_url():
@@ -804,11 +932,12 @@ def login_by_cookie(sb) -> bool:
         current_url = sb.get_current_url()
         url_lower = current_url.lower()
 
+        # 检查是否成功（URL 不含 login 且页面没有登录表单）
         has_login_form = False
         try:
             has_login_form = sb.execute_script("""
-                return !!(document.querySelector('input[name="email"]') ||
-                          document.querySelector('input[name="username"]') ||
+                return !!(document.querySelector('input[name="username"]') ||
+                          document.querySelector('input[name="email"]') ||
                           document.querySelector('input[name="password"]') ||
                           document.querySelector('input[type="password"]'));
             """)
@@ -820,12 +949,25 @@ def login_by_cookie(sb) -> bool:
             log("✅ Cookie 登录成功")
             return True
 
-        log(f"❌ Cookie 登录失败，仍在登录页")
+        log(f"❌ Cookie 登录失败，仍在登录页: {current_url}")
         sb.save_screenshot("cookie_login_fail.png")
         return False
     except Exception as e:
         log(f"❌ Cookie 登录异常: {e}")
         return False
+
+
+def _find_username_input(sb) -> str:
+    """在登录页查找用户名输入框，返回命中的选择器；找不到返回空串"""
+    for sel in _USERNAME_SELECTORS:
+        try:
+            sb.wait_for_element_present(sel, timeout=3)
+            log(f"✅ 找到用户名输入框: {sel}")
+            return sel
+        except Exception:
+            continue
+    return ""
+
 
 def login_by_password(sb) -> bool:
     global _current_login_method
@@ -837,7 +979,6 @@ def login_by_password(sb) -> bool:
         log(f"🌐 打开登录页: {Config.login_url()}")
         sb.uc_open_with_reconnect(Config.login_url(), reconnect_time=5)
         time.sleep(3)
-
         if is_cloudflare_present(sb):
             log("🔒 遇到 Cloudflare，尝试通过...")
             if not solve_cloudflare(sb):
@@ -845,76 +986,41 @@ def login_by_password(sb) -> bool:
                 return False
             time.sleep(2)
 
-        input_selector = None
-        for sel in ['input[name="username"]', 'input[name="email"]', 'input[name="Email"]',
-                     'input[type="email"]', 'input[type="text"]']:
-            try:
-                sb.wait_for_element(sel, timeout=10)
-                input_selector = sel
-                log(f"✅ 找到用户名输入框: {sel}")
-                break
-            except Exception:
-                continue
-
-        if not input_selector:
-            log("❌ 页面未加载出登录表单")
+        # 多选择器查找用户名输入框（IceHost 用 input[name="username"]）
+        username_sel = _find_username_input(sb)
+        if not username_sel:
+            log("❌ 页面未加载出登录表单（未找到用户名输入框）")
             sb.save_screenshot("login_load_fail.png")
             return False
 
+        # 处理可能的 Cookie 横幅
         try:
             for btn in sb.find_elements("button"):
-                txt = (btn.text or "").lower()
-                if "accept" in txt or "agree" in txt or "zgadzam" in txt or "akceptuj" in txt:
+                if "Accept" in (btn.text or ""):
                     btn.click()
                     time.sleep(0.5)
                     break
         except Exception:
             pass
 
-        log(f"📧 填写用户名: {Config.EMAIL}")
-        js_fill_input(sb, input_selector, Config.EMAIL)
+        log("📧 填写用户名/邮箱...")
+        js_fill_input(sb, username_sel, Config.EMAIL)
         time.sleep(0.3)
-
         log("🔑 填写密码...")
         js_fill_input(sb, 'input[name="password"]', Config.PASSWORD)
         time.sleep(1)
 
+        # 提交前再次检查 Cloudflare
         if is_cloudflare_present(sb):
             solve_cloudflare(sb)
             time.sleep(1)
 
         log("🖱️  提交登录表单...")
-        submitted = False
-
         try:
-            submitted = sb.execute_script("""
-                (function(){
-                    var btns = document.querySelectorAll('button[type="submit"], button');
-                    for (var i = 0; i < btns.length; i++) {
-                        var txt = (btns[i].textContent || '').toLowerCase();
-                        if (txt.includes('zaloguj') || txt.includes('login') || txt.includes('sign in') ||
-                            txt.includes('log in') || txt.includes('submit')) {
-                            btns[i].click();
-                            return true;
-                        }
-                    }
-                    return false;
-                })()
-            """)
+            sb.press_keys('input[name="password"]', '\n')
         except Exception:
-            pass
-
-        if not submitted:
-            try:
-                sb.press_keys('input[name="password"]', '\n')
-                submitted = True
-            except Exception:
-                pass
-
-        if not submitted:
             try:
                 sb.click('button[type="submit"]')
-                submitted = True
             except Exception:
                 pass
 
@@ -922,7 +1028,7 @@ def login_by_password(sb) -> bool:
         for _ in range(20):
             time.sleep(1)
             cur_url = sb.get_current_url().split('?')[0].lower()
-            if "login" not in cur_url and Config.LOGIN_PATH not in cur_url:
+            if Config.LOGIN_PATH not in cur_url and "login" not in cur_url:
                 break
 
         cur_url = sb.get_current_url().lower()
@@ -930,14 +1036,14 @@ def login_by_password(sb) -> bool:
             log("❌ 登录失败，仍在登录页")
             sb.save_screenshot("login_failed.png")
             return False
-
         _current_login_method = LOGIN_METHOD_PASSWORD
-        log(f"✅ 账号密码登录成功！")
+        log(f"✅ 账号密码登录成功！(URL: {sb.get_current_url()})")
         return True
     except Exception as e:
         log(f"❌ 密码登录异常: {e}")
         sb.save_screenshot("login_error.png")
         return False
+
 
 def _capture_discord_state(sb) -> str:
     log("🔎 获取 Discord OAuth state...")
@@ -955,6 +1061,7 @@ def _capture_discord_state(sb) -> str:
     state = urllib.parse.unquote(m.group(1))
     log(f"✅ 已捕获 state")
     return state
+
 
 def _discord_authorize(state: str) -> str:
     query = urllib.parse.urlencode({
@@ -992,6 +1099,7 @@ def _discord_authorize(state: str) -> str:
     except Exception as e:
         log(f"❌ Discord OAuth2 异常: {e}")
         return ""
+
 
 def login_by_discord(sb) -> bool:
     global _current_login_method
@@ -1031,6 +1139,7 @@ def login_by_discord(sb) -> bool:
     sb.save_screenshot("login_timeout.png")
     return False
 
+
 def do_login(sb) -> bool:
     log("\n" + "#" * 25)
     log("  开始自动登录")
@@ -1049,8 +1158,9 @@ def do_login(sb) -> bool:
     log("\n❌ 所有登录方式均失败")
     return False
 
+
 # ============================================================
-#  Telegram 通知
+#  Telegram 通知（单一最终通知）
 # ============================================================
 
 def send_telegram_message(text: str) -> bool:
@@ -1070,6 +1180,7 @@ def send_telegram_message(text: str) -> bool:
         log(f"⚠️  Telegram 发送异常: {e}")
         return False
 
+
 def build_notification(status: str, extra: str = "", error: str = "",
                        expiry_date: str = "", login_method: str = "") -> str:
     masked_email = mask_email(Config.EMAIL) if Config.EMAIL else "未填写"
@@ -1086,65 +1197,83 @@ def build_notification(status: str, extra: str = "", error: str = "",
     lines.append(f"⏱️  执行时间: {beijing_time_str()}")
     return "\n".join(lines)
 
-def notify_final(status: str, extra: str = "", error: str = "",
-                 expiry_date: str = "", login_method: str = ""):
-    send_telegram_message(build_notification(status, extra, error, expiry_date, login_method))
+
+def notify_final(status: str, login_method: str = "", extra: str = "",
+                 error: str = "", expiry_date: str = ""):
+    """单一最终通知：只在脚本结束时发送一次总结通知"""
+    send_telegram_message(build_notification(status, extra=extra, error=error,
+                                             expiry_date=expiry_date, login_method=login_method))
+
 
 # ============================================================
-#  IceHost 续期动作
+#  续期动作（IceHost 专用）
 # ============================================================
 
 def _parse_expiry_date(date_str: str):
+    """解析到期时间字符串，返回 datetime 对象"""
     date_str = date_str.strip()
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d", "%d.%m.%Y %H:%M:%S", "%d.%m.%Y"):
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d",
+                "%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M", "%d.%m.%Y"):
         try:
             return datetime.strptime(date_str, fmt)
         except ValueError:
             continue
     return None
 
+
+def _is_ip_blocked(sb) -> bool:
+    """检测 IceHost IP 封锁（页面标题包含 Block）"""
+    try:
+        title = sb.execute_script("return document.title || '';") or ""
+        if "block" in title.lower():
+            log(f"🚫 检测到 IP 被封锁（页面标题: {title}）")
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def _find_renew_buttons(sb) -> list:
-    """直接在整页面查找所有续期按钮（波兰语/英语）"""
+    """
+    全页搜索续期按钮（通过 span / button 文本匹配）
+    匹配文本: Przedłuż serwer / Extend Server / Przedłuż / Extend
+    返回: [{text, ...}]
+    """
     js = """
     (function(){
         var results = [];
-        var spans = document.querySelectorAll('span.sc-1qu1gou-2, span');
-        spans.forEach(function(span, idx){
-            var txt = (span.textContent || '').trim().toLowerCase();
-            if (txt === 'przedłuż serwer' || txt === 'extend server' ||
-                txt === 'przedłuż' || txt === 'extend') {
-                var btn = span.closest('button');
-                if (btn) {
-                    var card = btn.closest('[draggable="true"], [class*="sc-1ibsw91"]');
-                    var serverName = '';
-                    var expiry = '';
-                    if (card) {
-                        var p = card.querySelector('p');
-                        if (p) serverName = p.textContent.trim();
-                        var dateEls = card.querySelectorAll('p, span, div');
-                        for (var i = 0; i < dateEls.length; i++) {
-                            var t = (dateEls[i].textContent || '').trim();
-                            if (/\\d{4}-\\d{2}-\\d{2}/.test(t)) {
-                                expiry = t;
-                                break;
-                            }
-                        }
-                        var suspended = false;
-                        var spans2 = card.querySelectorAll('span');
-                        spans2.forEach(function(s){
-                            var st = (s.textContent || '').toLowerCase();
-                            if (st.includes('zawieszony') || st.includes('suspended'))
-                                suspended = true;
-                        });
-                        results.push({idx: results.length, btnText: txt, serverName: serverName,
-                                       expiry: expiry, suspended: suspended});
-                    } else {
-                        results.push({idx: results.length, btnText: txt, serverName: '',
-                                       expiry: '', suspended: false});
+        var matchTexts = ['przedłuż serwer', 'extend server', 'przedłuż', 'extend'];
+        var seen = {};
+        // 1. 搜索所有 span（IceHost 按钮文本常在 span 里）
+        var spans = document.querySelectorAll('span');
+        for (var i = 0; i < spans.length; i++) {
+            var txt = (spans[i].textContent || '').toLowerCase().trim();
+            for (var j = 0; j < matchTexts.length; j++) {
+                if (txt === matchTexts[j] || (txt.length < 40 && txt.includes(matchTexts[j]))) {
+                    var key = txt;
+                    if (!seen[key]) {
+                        seen[key] = true;
+                        results.push({text: spans[i].textContent.trim(), type: 'span'});
                     }
+                    break;
                 }
             }
-        });
+        }
+        // 2. 搜索所有 button / a / [role=button]
+        var btns = document.querySelectorAll('button, a, [role="button"]');
+        for (var k = 0; k < btns.length; k++) {
+            var btxt = (btns[k].textContent || '').toLowerCase().trim();
+            for (var m = 0; m < matchTexts.length; m++) {
+                if (btxt === matchTexts[m] || (btxt.length < 40 && btxt.includes(matchTexts[m]))) {
+                    var bkey = btxt;
+                    if (!seen[bkey]) {
+                        seen[bkey] = true;
+                        results.push({text: btns[k].textContent.trim(), type: 'button'});
+                    }
+                    break;
+                }
+            }
+        }
         return results;
     })()
     """
@@ -1154,215 +1283,215 @@ def _find_renew_buttons(sb) -> list:
         log(f"❌ 查找续期按钮失败: {e}")
         return []
 
+
 def _click_button_by_text(sb, texts: list, timeout: int = 10) -> bool:
-    """在整页面查找并点击匹配文本的按钮"""
+    """
+    通过文本匹配点击按钮（倒序遍历，优先点击后出现的按钮，通常是确认弹窗）
+    texts: 文本列表（不区分大小写），命中其一即点击
+    """
     start = time.time()
+    js_texts = json.dumps([t.lower() for t in texts])
+    js = f"""
+    (function(){{
+        var texts = {js_texts};
+        var btns = document.querySelectorAll('button, a, [role="button"], span');
+        for (var i = btns.length - 1; i >= 0; i--) {{
+            var txt = (btns[i].textContent || '').toLowerCase().trim();
+            for (var j = 0; j < texts.length; j++) {{
+                if (txt === texts[j] || (txt.length < 60 && txt.includes(texts[j]))) {{
+                    var el = btns[i];
+                    var clickTarget = el.closest('button, a, [role="button"]') || el;
+                    clickTarget.click();
+                    return clickTarget.textContent.trim();
+                }}
+            }}
+        }}
+        return false;
+    }})()
+    """
     while time.time() - start < timeout:
-        js = """
-        (function(){
-            var texts = """ + json.dumps([t.lower() for t in texts]) + """;
-            var spans = document.querySelectorAll('span.sc-1qu1gou-2, span');
-            for (var i = 0; i < spans.length; i++) {
-                var txt = (spans[i].textContent || '').trim().toLowerCase();
-                for (var j = 0; j < texts.length; j++) {
-                    if (txt === texts[j] || txt.includes(texts[j])) {
-                        var btn = spans[i].closest('button') || spans[i];
-                        btn.click();
-                        return txt;
-                    }
-                }
-            }
-            return null;
-        })()
-        """
         try:
             result = sb.execute_script(js)
             if result:
-                log(f"✅ 已点击按钮: {result}")
+                log(f"🖱️  已点击按钮: {result}")
                 return True
         except Exception:
             pass
         time.sleep(0.5)
     return False
 
+
+# 续期按钮文本（波兰语 / 英语）
+_RENEW_BUTTON_TEXTS = ["Przedłuż serwer", "Extend Server", "Przedłuż", "Extend"]
+# 确认按钮文本（波兰语 / 英语）
+_CONFIRM_BUTTON_TEXTS = [
+    "Tak, przedłuż serwer", "Yes, extend server",
+    "Tak, przedłuż", "Yes, extend",
+]
+
+
+def _navigate_to_servers(sb) -> bool:
+    """导航到服务器列表页面"""
+    log("🌐 导航到服务器列表页面...")
+
+    # 方式1：点击侧边栏 Server/Serwery 链接
+    js_click_sidebar = """
+    (function(){
+        var links = document.querySelectorAll('a, [role="link"]');
+        for (var i = 0; i < links.length; i++) {
+            var txt = (links[i].textContent || '').toLowerCase().trim();
+            if (txt.includes('serwer') || txt.includes('server') ||
+                txt.includes('serwery') || txt.includes('servers') || txt.includes('moje')) {
+                links[i].click();
+                return true;
+            }
+        }
+        return false;
+    })()
+    """
+    try:
+        if sb.execute_script(js_click_sidebar):
+            log("✅ 已点击侧边栏服务器链接")
+            time.sleep(3)
+            sb.wait_for_ready_state_complete()
+            return True
+    except Exception:
+        pass
+
+    # 方式2：直接访问 BASE_URL 根路径（IceHost 登录后默认就是服务器列表）
+    log("⚠️  侧边栏点击失败，尝试直接访问根路径...")
+    try:
+        sb.open(Config.BASE_URL)
+        sb.wait_for_ready_state_complete()
+        time.sleep(3)
+        return True
+    except Exception as e:
+        log(f"❌ 导航失败: {e}")
+        return False
+
+
 def do_renew(sb) -> tuple:
     """
     IceHost 服务器续期逻辑
     返回: (status, extra_info, expiry_date)
-        status: "SUCCESS" | "NOT_TIME" | "FAIL"
+        status: "SUCCESS" | "FAIL"
     """
     log("\n" + "#" * 25)
     log("  开始执行 IceHost 续期动作")
     log("#" * 25)
 
-    # 步骤1：确保在服务器页面（登录后应该已自动跳转到根路径）
-    current_url = sb.get_current_url()
-    log(f"📝 当前页面: {current_url}")
+    # 步骤1：导航到服务器页面
+    if not _navigate_to_servers(sb):
+        return "FAIL", "无法导航到服务器页面", ""
 
-    # 检查是否被网站封锁
-    try:
-        page_title = sb.execute_script("return document.title")
-        log(f"📝 页面标题: {page_title}")
-        if "block" in page_title.lower():
-            log("🚫 网站封锁了当前 IP！页面标题含 'Block'")
-            log("💡 解决方案：配置 NODE_LINK 使用代理节点")
-            sb.save_screenshot("ip_blocked.png")
-            return "FAIL", "网站封锁了当前 IP，需要配置代理", ""
-    except Exception:
-        pass
+    # IP 封锁检测（IceHost 封锁 GitHub Actions IP 时页面标题为 "IceHost - Block"）
+    if _is_ip_blocked(sb):
+        return "FAIL", "IP 被 IceHost 封锁，请配置代理节点（NODE_LINK）后重试", ""
 
-    # 如果不在根路径，导航到根路径
-    if Config.BASE_URL not in current_url or "/login" in current_url.lower():
-        log("🌐 导航到服务器页面...")
-        sb.open(Config.BASE_URL)
-        sb.wait_for_ready_state_complete()
-        time.sleep(5)
-
-    # 处理 Cloudflare
+    # 处理可能的 Cloudflare 验证
     if is_cloudflare_present(sb):
         log("🔒 服务器页面遇到 Cloudflare...")
         if not solve_cloudflare(sb):
             return "FAIL", "Cloudflare 验证未通过", ""
         time.sleep(2)
+        # 再次检测 IP 封锁
+        if _is_ip_blocked(sb):
+            return "FAIL", "IP 被 IceHost 封锁，请配置代理节点（NODE_LINK）后重试", ""
 
-    # 再次检查是否被封锁
-    try:
-        page_title = sb.execute_script("return document.title")
-        if "block" in page_title.lower():
-            log("🚫 网站封锁了当前 IP！")
-            sb.save_screenshot("ip_blocked.png")
-            return "FAIL", "网站封锁了当前 IP，需要配置代理", ""
-    except Exception:
-        pass
+    # 步骤2：查找续期按钮（5 次重试，第 3 次刷新页面）
+    renew_buttons = []
+    for attempt in range(5):
+        attempt_num = attempt + 1
+        log(f"\n🔍 第 {attempt_num} 次查找续期按钮...")
 
-    # 步骤2：查找续期按钮（带重试）
-    buttons = []
-    for retry in range(5):
-        time.sleep(3)
-        buttons = _find_renew_buttons(sb)
-        if buttons:
-            break
-        log(f"⏳ 第 {retry + 1} 次未找到续期按钮，等待页面加载...")
-        if retry == 2:
-            log("🔄 刷新页面重试...")
+        # 第 3 次重试时刷新页面
+        if attempt_num == 3:
+            log("🔄 刷新页面后重试...")
             sb.refresh()
             sb.wait_for_ready_state_complete()
-            time.sleep(5)
+            time.sleep(3)
+            if _is_ip_blocked(sb):
+                return "FAIL", "IP 被 IceHost 封锁，请配置代理节点（NODE_LINK）后重试", ""
             if is_cloudflare_present(sb):
                 solve_cloudflare(sb)
                 time.sleep(2)
 
-    if not buttons:
-        log("❌ 重试5次后仍未找到任何续期按钮")
-        sb.save_screenshot("no_buttons.png")
+        renew_buttons = _find_renew_buttons(sb)
+        if renew_buttons:
+            log(f"✅ 找到 {len(renew_buttons)} 个续期按钮")
+            for rb in renew_buttons:
+                log(f"  - [{rb.get('type', '')}] {rb.get('text', '')}")
+            break
+
+        log(f"⚠️  第 {attempt_num} 次未找到续期按钮")
+        # 打印页面标题便于诊断
         try:
-            btn_texts = sb.execute_script("""
-                return Array.from(document.querySelectorAll('button')).map(function(b){
-                    return b.textContent.trim();
-                }).filter(function(t){return t;});
-            """)
-            log(f"📝 页面按钮: {btn_texts}")
+            title = sb.execute_script("return document.title || '';")
+            log(f"   页面标题: {title}")
         except Exception:
             pass
-        return "FAIL", "未找到续期按钮", ""
+        if attempt_num < 5:
+            time.sleep(3)
 
-    log(f"📋 找到 {len(buttons)} 个续期按钮:")
-    for b in buttons:
-        status_str = "（已暂停）" if b.get("suspended") else ""
-        log(f"  [{b['idx']}] 服务器: {b.get('serverName', '?')} | 到期: {b.get('expiry', '?')} | 按钮: {b['btnText']} {status_str}")
+    if not renew_buttons:
+        log("❌ 5 次重试后仍未找到续期按钮")
+        sb.save_screenshot("no_renew_buttons.png")
+        if _is_ip_blocked(sb):
+            return "FAIL", "IP 被 IceHost 封锁，请配置代理节点（NODE_LINK）后重试", ""
+        return "FAIL", "未找到续期按钮（可能页面结构变化或无服务器）", ""
 
-    # 步骤3：逐一点击续期
+    # 步骤3：逐个点击续期按钮并确认
     renewed_count = 0
-    skipped_count = 0
     failed_count = 0
-    latest_expiry = ""
     results = []
+    total = len(renew_buttons)
 
-    for btn_info in buttons:
-        server_name = btn_info.get("serverName", f"Server-{btn_info['idx']}")
-        expiry_str = btn_info.get("expiry", "")
-        old_expiry = expiry_str
-
-        if btn_info.get("suspended"):
-            log(f"\n⚠️  [{server_name}] 服务器已暂停，跳过")
-            results.append(f"⚠️  {server_name}: 已暂停")
-            skipped_count += 1
-            continue
-
-        log(f"\n🔄 [{server_name}] 开始续期...")
+    for i, rb in enumerate(renew_buttons):
+        btn_text = rb.get("text", "")
+        log(f"\n🔄 [{i+1}/{total}] 点击续期按钮: {btn_text}")
 
         # 点击续期按钮
-        if not _click_button_by_text(sb, ["Przedłuż serwer", "Extend Server", "Przedłuż", "Extend"], timeout=5):
-            log(f"❌ [{server_name}] 无法点击续期按钮")
-            results.append(f"❌ {server_name}: 无法点击续期按钮")
+        if not _click_button_by_text(sb, _RENEW_BUTTON_TEXTS, timeout=5):
+            log(f"❌ [{i+1}] 点击续期按钮失败")
+            results.append(f"❌ 按钮 {i+1}: 点击失败")
             failed_count += 1
             continue
 
         log("⏳ 等待确认弹窗...")
         time.sleep(2)
 
-        # 点击确认按钮（波兰语/英语）
-        if not _click_button_by_text(sb, ["Tak, przedłuż serwer", "Yes, extend the server",
-                                           "Tak, przedłuż", "Yes, extend"], timeout=10):
-            log(f"❌ [{server_name}] 未找到确认按钮")
-            results.append(f"❌ {server_name}: 确认按钮未找到")
-            sb.save_screenshot(f"confirm_fail_{btn_info['idx']}.png")
+        # 点击确认按钮
+        if not _click_button_by_text(sb, _CONFIRM_BUTTON_TEXTS, timeout=10):
+            log(f"❌ [{i+1}] 未找到确认按钮")
+            results.append(f"❌ 按钮 {i+1}: 确认按钮未找到")
+            sb.save_screenshot(f"confirm_fail_{i+1}.png")
             failed_count += 1
             continue
 
-        log("⏳ 等待续期处理...")
+        log("✅ 已点击确认")
         time.sleep(5)
 
-        # 刷新页面验证
-        log("🔄 刷新页面验证续期结果...")
-        sb.refresh()
-        sb.wait_for_ready_state_complete()
-        time.sleep(5)
-
+        # 处理可能的 Cloudflare
         if is_cloudflare_present(sb):
             solve_cloudflare(sb)
             time.sleep(2)
 
-        # 重新查找按钮，对比到期时间
-        new_buttons = _find_renew_buttons(sb)
-        new_expiry_str = ""
-        for nb in new_buttons:
-            if nb.get("serverName") == server_name:
-                new_expiry_str = nb.get("expiry", "")
-                break
-
-        if new_expiry_str and new_expiry_str != old_expiry:
-            new_dt = _parse_expiry_date(new_expiry_str)
-            new_days = (new_dt - datetime.now()).total_seconds() / 86400 if new_dt else 0
-            log(f"✅ [{server_name}] 续期成功！")
-            log(f"   旧到期: {old_expiry}")
-            log(f"   新到期: {new_expiry_str}（剩余 {new_days:.1f} 天）")
-            results.append(f"✅ {server_name}: {old_expiry} → {new_expiry_str}")
-            renewed_count += 1
-            if not latest_expiry or new_expiry_str > latest_expiry:
-                latest_expiry = new_expiry_str
-        else:
-            log(f"⚠️  [{server_name}] 到期时间未变化，续期可能失败")
-            results.append(f"⚠️  {server_name}: 到期时间未变化（{old_expiry}）")
-            failed_count += 1
-            if not latest_expiry or expiry_str > latest_expiry:
-                latest_expiry = expiry_str
+        renewed_count += 1
+        results.append(f"✅ 按钮 {i+1}: {btn_text} 已续期")
 
     # 汇总
     log("\n" + "=" * 40)
     log("  续期汇总")
     log("=" * 40)
-    log(f"  总计: {len(buttons)} | 成功: {renewed_count} | 跳过: {skipped_count} | 失败: {failed_count}")
+    log(f"  续期按钮总数: {total} | 成功: {renewed_count} | 失败: {failed_count}")
     for r in results:
         log(f"  {r}")
 
     extra_info = "\n".join(results)
-    if failed_count > 0 and renewed_count == 0:
-        return "FAIL", extra_info, latest_expiry
-    elif renewed_count > 0:
-        return "SUCCESS", extra_info, latest_expiry
-    else:
-        return "NOT_TIME", extra_info, latest_expiry
+    if renewed_count > 0:
+        return "SUCCESS", extra_info, ""
+    return "FAIL", extra_info, ""
+
 
 # ============================================================
 #  清理模块
@@ -1389,6 +1518,7 @@ def cleanup():
         pass
     log("✅ 清理完成\n")
 
+
 # ============================================================
 #  主流程
 # ============================================================
@@ -1400,6 +1530,7 @@ def main():
 
     if not Config.validate():
         log("❌ 配置校验失败，请检查环境变量")
+        notify_final("❌ 配置校验失败", error="未配置任何登录凭证或 BASE_URL")
         sys.exit(1)
 
     proxy_started = False
@@ -1426,25 +1557,29 @@ def main():
         log(f"🚀 启动浏览器 (headless={Config.HEADLESS})...")
 
         with SB(**sb_kwargs) as sb:
+            # 登录
             if not do_login(sb):
-                notify_final("❌ 登录失败", error="所有登录方式均失败")
+                log("❌ 所有登录方式均失败")
+                notify_final("❌ 登录失败", error="所有登录方式（Cookie/账号密码/Discord）均失败")
                 sys.exit(1)
 
             login_method = get_login_method()
             log(f"✅ 登录成功，方式: {login_method}")
 
+            # 执行续期
             status, extra_info, expiry_date = do_renew(sb)
 
+            # 单一最终通知
             if status == "SUCCESS":
                 log("🎉 续期成功！")
-                notify_final("✅ 续期成功", extra=extra_info, expiry_date=expiry_date, login_method=login_method)
-            elif status == "NOT_TIME":
-                log("⏳ 无需续期")
-                notify_final("⏳ 无需续期", extra=extra_info, expiry_date=expiry_date, login_method=login_method)
+                notify_final("✅ 续期成功", login_method=login_method,
+                             extra=extra_info, expiry_date=expiry_date)
             else:
                 log("❌ 续期失败")
-                notify_final("❌ 续期失败", extra=extra_info, login_method=login_method)
+                notify_final("❌ 续期失败", login_method=login_method,
+                             extra=extra_info, error="详见下方明细")
 
+            # 检查并更新 Cookie 到 GitHub Secrets
             if Config.GH_TOKEN and Config.COOKIE_NAME:
                 log("\n🔄 检查并更新 Cookie...")
                 save_cookie_to_github(sb)
@@ -1454,13 +1589,14 @@ def main():
 
     except KeyboardInterrupt:
         log("\n⚠️  用户中断")
+        notify_final("⚠️ 用户中断", error="用户手动中断执行")
         sys.exit(130)
     except Exception as e:
         log(f"\n❌ 未捕获的异常: {e}")
         import traceback
         traceback.print_exc()
         try:
-            notify_final("❌ 脚本异常", error=str(e))
+            notify_final("❌ 脚本异常", error=f"未捕获异常: {e}")
         except Exception:
             pass
         sys.exit(1)
@@ -1468,6 +1604,7 @@ def main():
         if proxy_started:
             stop_singbox()
         cleanup()
+
 
 if __name__ == "__main__":
     main()

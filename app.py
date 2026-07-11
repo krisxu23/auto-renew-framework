@@ -540,7 +540,7 @@ def stop_singbox():
 
 
 # ============================================================
-#  Cloudflare 验证（6 种策略逐一尝试）
+#  Cloudflare 验证（多策略逐一尝试）
 # ============================================================
 
 _CF_INDICATORS = [
@@ -575,23 +575,40 @@ _EXPAND_JS = """
 
 _COORDS_JS = """
 (function(){
+    // 优先定位 Turnstile widget 的复选框 label.dxeA5（IceHost 的 Turnstile 直接嵌入主页面）
+    var label = document.querySelector('label.dxeA5') || document.querySelector('label:has(input[type="checkbox"])');
+    if (label) {
+        var r = label.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) {
+            // 点击复选框左侧的可视化区域（span.hHMFo6）
+            return {cx: Math.round(r.x + 15), cy: Math.round(r.y + r.height / 2)};
+        }
+    }
+    // 备用1: span.hHMFo6（复选框可视化元素）
+    var visual = document.querySelector('span.hHMFo6');
+    if (visual) {
+        var r2 = visual.getBoundingClientRect();
+        if (r2.width > 0) return {cx: Math.round(r2.x + r2.width/2), cy: Math.round(r2.y + r2.height/2)};
+    }
+    // 备用2: iframe（某些场景下 Turnstile 仍在 iframe 内）
     var iframes = document.querySelectorAll('iframe');
     for (var i = 0; i < iframes.length; i++) {
         var src = iframes[i].src || '';
         if (src.includes('cloudflare') || src.includes('turnstile') || src.includes('challenges')) {
-            var r = iframes[i].getBoundingClientRect();
-            if (r.width > 0 && r.height > 0)
-                return {cx: Math.round(r.x + 30), cy: Math.round(r.y + r.height / 2)};
+            var r3 = iframes[i].getBoundingClientRect();
+            if (r3.width > 0 && r3.height > 0)
+                return {cx: Math.round(r3.x + 30), cy: Math.round(r3.y + r3.height / 2)};
         }
     }
+    // 备用3: cf-turnstile-response 输入框的父容器
     var inp = document.querySelector('input[name="cf-turnstile-response"]');
     if (inp) {
         var p = inp.parentElement;
         for (var j = 0; j < 5; j++) {
             if (!p) break;
-            var r = p.getBoundingClientRect();
-            if (r.width > 100 && r.height > 30)
-                return {cx: Math.round(r.x + 30), cy: Math.round(r.y + r.height / 2)};
+            var r4 = p.getBoundingClientRect();
+            if (r4.width > 100 && r4.height > 30)
+                return {cx: Math.round(r4.x + 30), cy: Math.round(r4.y + r4.height / 2)};
             p = p.parentElement;
         }
     }
@@ -601,6 +618,26 @@ _COORDS_JS = """
 
 _JS_CLICK_ALL = """
 (function(){
+    // 1. 优先点击 Turnstile 复选框 label.dxeA5（IceHost 直接嵌入主页面场景）
+    var label = document.querySelector('label.dxeA5');
+    if (label) {
+        label.click();
+        label.dispatchEvent(new MouseEvent('click', {bubbles:true}));
+        // 同时点击内部 checkbox 和可视化 span
+        var cb = label.querySelector('input[type="checkbox"]');
+        if (cb) { cb.click(); cb.dispatchEvent(new MouseEvent('click', {bubbles:true})); }
+        var sp = label.querySelector('span.hHMFo6');
+        if (sp) { sp.click(); sp.dispatchEvent(new MouseEvent('click', {bubbles:true})); }
+        return 'label.dxeA5';
+    }
+    // 2. 点击 span.hHMFo6（复选框可视化元素）
+    var visual = document.querySelector('span.hHMFo6');
+    if (visual) {
+        visual.click();
+        visual.dispatchEvent(new MouseEvent('click', {bubbles:true}));
+        return 'span.hHMFo6';
+    }
+    // 3. 点击 iframe（传统 iframe 嵌入场景）
     var iframes = document.querySelectorAll('iframe');
     for (var i = 0; i < iframes.length; i++) {
         if (iframes[i].src && iframes[i].src.includes('challenges.cloudflare.com')) {
@@ -608,12 +645,14 @@ _JS_CLICK_ALL = """
             iframes[i].dispatchEvent(new MouseEvent('click', {bubbles:true}));
         }
     }
+    // 4. 点击其他可疑 label
     var labels = document.querySelectorAll('label');
     for (var j = 0; j < labels.length; j++) {
         var txt = (labels[j].textContent || '').toLowerCase();
-        if (txt.includes('robot') || txt.includes('captcha') || txt.includes('verify'))
+        if (txt.includes('robot') || txt.includes('captcha') || txt.includes('verify') || txt.includes('验证'))
             labels[j].click();
     }
+    // 5. 点击所有未禁用的 checkbox
     var cbs = document.querySelectorAll('input[type="checkbox"]');
     for (var k = 0; k < cbs.length; k++) {
         if (!cbs[k].disabled) {
@@ -621,6 +660,7 @@ _JS_CLICK_ALL = """
             cbs[k].dispatchEvent(new MouseEvent('click', {bubbles:true}));
         }
     }
+    return 'done';
 })()
 """
 
@@ -637,7 +677,29 @@ _MOUSE_MOVE_JS = """
 
 
 def is_cloudflare_present(sb) -> bool:
+    """检测 Cloudflare/Turnstile 是否存在"""
     try:
+        # 优先使用 Turnstile widget 自身的元素检测（更精准）
+        result = sb.execute_script("""
+        (function(){
+            // IceHost 的 Turnstile 直接嵌入主页面，检测关键元素
+            if (document.querySelector('label.dxeA5')) return true;
+            if (document.querySelector('span.hHMFo6')) return true;
+            if (document.querySelector('span.YFbSK8')) return true;  // "请验证您是真人"
+            if (document.getElementById('KwOf6')) return true;        // "正在验证…"
+            if (document.getElementById('OiYF0')) return true;        // "成功！"
+            if (document.getElementById('iKdh9')) return true;         // "验证失败"
+            // 传统 iframe 嵌入场景
+            if (document.querySelector('iframe[src*="challenges.cloudflare.com"]')) return true;
+            if (document.querySelector('iframe[src*="turnstile"]')) return true;
+            // cf-turnstile-response 隐藏输入框
+            if (document.querySelector('input[name="cf-turnstile-response"]')) return true;
+            return false;
+        })()
+        """)
+        if result:
+            return True
+        # 备用：页面源码关键词检测
         src = (sb.get_page_source() or "").lower()
         return any(x in src for x in _CF_INDICATORS)
     except Exception:
@@ -645,16 +707,61 @@ def is_cloudflare_present(sb) -> bool:
 
 
 def is_turnstile_solved(sb) -> bool:
+    """检测 Turnstile 是否已通过验证（使用 widget 自身状态元素，更精准）"""
     try:
         result = sb.execute_script("""
         (function(){
+            // 1. 最权威：成功状态容器 #UtClV5 可见（display 不是 none）
+            var successBox = document.getElementById('UtClV5');
+            if (successBox) {
+                var s = window.getComputedStyle(successBox);
+                if (s.display !== 'none' && s.visibility !== 'hidden') return true;
+            }
+            // 2. 成功文字 #OiYF0 可见
+            var successText = document.getElementById('OiYF0');
+            if (successText) {
+                var s2 = window.getComputedStyle(successText);
+                if (s2.display !== 'none' && successText.textContent.includes('成功')) return true;
+            }
+            // 3. cf-turnstile-response 已有值
             var i = document.querySelector('input[name="cf-turnstile-response"]');
-            return !!(i && i.value && i.value.length > 20);
+            if (i && i.value && i.value.length > 20) return true;
+            return false;
         })()
         """)
         return bool(result)
     except Exception:
         return False
+
+
+def get_turnstile_status(sb) -> str:
+    """获取 Turnstile 当前状态：waiting / verifying / success / failed / expired / unknown"""
+    try:
+        result = sb.execute_script("""
+        (function(){
+            function isVisible(el) {
+                if (!el) return false;
+                var s = window.getComputedStyle(el);
+                return s.display !== 'none' && s.visibility !== 'hidden';
+            }
+            // 成功
+            if (isVisible(document.getElementById('UtClV5'))) return 'success';
+            // 失败
+            if (isVisible(document.getElementById('quFo1'))) return 'failed';
+            // 过期
+            if (isVisible(document.getElementById('pxku5')) || isVisible(document.getElementById('PZKC2'))) return 'expired';
+            // 验证中
+            if (isVisible(document.getElementById('PwDu3'))) return 'verifying';
+            // 等待点击（初始状态：请验证您是真人）
+            if (isVisible(document.getElementById('KYRAp1'))) return 'waiting';
+            // 检测到 label.dxeA5 但状态容器都不可见
+            if (document.querySelector('label.dxeA5')) return 'waiting';
+            return 'unknown';
+        })()
+        """)
+        return result or 'unknown'
+    except Exception:
+        return 'unknown'
 
 
 def _cf_wait_silent(sb, timeout: int = 30) -> bool:
@@ -686,15 +793,16 @@ def _cf_uc_gui_captcha(sb, max_attempts: int = 3) -> bool:
 
 
 def _cf_xdotool_click(sb, max_attempts: int = 6) -> bool:
-    log("🔍 策略3: xdotool 物理点击 Turnstile 复选框...")
+    log("🔍 备用策略1: xdotool 物理点击 Turnstile 复选框...")
     try:
         sb.execute_script(_EXPAND_JS)
     except Exception:
         pass
     time.sleep(0.5)
     for attempt in range(max_attempts):
-        if is_turnstile_solved(sb):
-            log(f"✅ 通过（第 {attempt + 1} 次）")
+        status = get_turnstile_status(sb)
+        if status == 'success' or is_turnstile_solved(sb):
+            log(f"✅ 通过（第 {attempt + 1} 次）状态: {status}")
             return True
         try:
             coords = sb.execute_script(_COORDS_JS)
@@ -702,21 +810,22 @@ def _cf_xdotool_click(sb, max_attempts: int = 6) -> bool:
             coords = None
         if coords:
             ax, ay = screen_to_abs(sb, coords["cx"], coords["cy"])
-            log(f"🖱️  点击 Turnstile ({ax}, {ay}) 第{attempt+1}次")
+            log(f"🖱️  点击 Turnstile ({ax}, {ay}) 第{attempt+1}次 (状态: {status})")
             xdotool_click(ax, ay)
         else:
-            log("⚠️ 无法定位 Turnstile 坐标")
+            log(f"⚠️ 无法定位 Turnstile 坐标 (状态: {status})")
         for _ in range(8):
             time.sleep(0.5)
-            if is_turnstile_solved(sb):
-                log(f"✅ 通过（第 {attempt + 1} 次）")
+            status = get_turnstile_status(sb)
+            if status == 'success' or is_turnstile_solved(sb):
+                log(f"✅ 通过（第 {attempt + 1} 次）状态: {status}")
                 return True
     log("❌ xdotool 策略失败")
     return False
 
 
 def _cf_seleniumbase_click(sb, max_attempts: int = 5) -> bool:
-    log("🔍 策略4: SeleniumBase 原生点击 iframe...")
+    log("🔍 备用策略: SeleniumBase 原生点击 iframe...")
     for attempt in range(max_attempts):
         if is_turnstile_solved(sb):
             log(f"✅ 通过（第 {attempt + 1} 次）")
@@ -737,18 +846,21 @@ def _cf_seleniumbase_click(sb, max_attempts: int = 5) -> bool:
 
 
 def _cf_js_click_all(sb, max_attempts: int = 3) -> bool:
-    log("🔍 策略5: JS 遍历点击所有可疑元素...")
+    log("🔍 备用策略2: JS 遍历点击所有可疑元素...")
     for attempt in range(max_attempts):
-        if is_turnstile_solved(sb):
+        status = get_turnstile_status(sb)
+        if status == 'success' or is_turnstile_solved(sb):
             log(f"✅ 通过（第 {attempt + 1} 次）")
             return True
         try:
-            sb.execute_script(_JS_CLICK_ALL)
-        except Exception:
-            pass
+            result = sb.execute_script(_JS_CLICK_ALL)
+            log(f"   JS 点击返回: {result}")
+        except Exception as e:
+            log(f"   JS 点击异常: {e}")
         for _ in range(6):
             time.sleep(1)
-            if is_turnstile_solved(sb):
+            status = get_turnstile_status(sb)
+            if status == 'success' or is_turnstile_solved(sb):
                 log(f"✅ 通过（第 {attempt + 1} 次）")
                 return True
     log("❌ JS 点击策略失败")
@@ -772,29 +884,85 @@ def _cf_random_mouse(sb, duration: int = 10) -> bool:
 
 
 def solve_cloudflare(sb) -> bool:
-    """多策略逐一尝试通过 Cloudflare 验证"""
+    """
+    通过 Cloudflare 验证
+    主策略: uc_open_with_reconnect + uc_gui_click_captcha（SeleniumBase 推荐方式）
+    备用策略: xdotool / JS点击 / 随机鼠标
+    """
     if not is_cloudflare_present(sb):
         log("✅ 未检测到 Cloudflare 验证")
         return True
-    log("🔒 检测到 Cloudflare 验证，开始多策略尝试...")
-    strategies = [
-        ("静默等待",            _cf_wait_silent),
-        ("uc_gui_click_captcha", _cf_uc_gui_captcha),
-        ("xdotool物理点击",     _cf_xdotool_click),
-        ("SeleniumBase点击",    _cf_seleniumbase_click),
-        ("JS遍历点击",          _cf_js_click_all),
-        ("随机鼠标移动",         _cf_random_mouse),
-    ]
-    for name, func in strategies:
-        log(f"\n▶️  尝试策略: {name}")
+
+    status = get_turnstile_status(sb)
+    log(f"🔒 检测到 Cloudflare 验证（当前状态: {status}），开始尝试通过...")
+
+    # ===== 主策略: uc_open_with_reconnect + uc_gui_click_captcha =====
+    # uc_open_with_reconnect 会在打开页面后断开驱动连接（避免 CDP 被检测），
+    # 等待 reconnect_time 秒后重新连接 —— 这是 SeleniumBase 通过 Cloudflare 的关键
+    for attempt in range(4):
+        reconnect_time = 4 + attempt * 2  # 递增: 4, 6, 8, 10 秒
+        log(f"\n▶️  主策略第 {attempt+1}/4 次 (reconnect={reconnect_time}s)")
         try:
-            if func(sb):
-                log(f"\n🎉 策略 [{name}] 成功通过！")
+            # 获取当前 URL，用 uc_open_with_reconnect 重新打开
+            current_url = sb.get_current_url()
+            sb.uc_open_with_reconnect(current_url, reconnect_time=reconnect_time)
+            time.sleep(2)
+
+            # 重连后检查状态
+            status = get_turnstile_status(sb)
+            log(f"   重连后状态: {status}")
+            if status == 'success' or is_turnstile_solved(sb):
+                log(f"✅ 重连后 Turnstile 已自动通过（第 {attempt+1} 次）")
                 return True
+            if not is_cloudflare_present(sb):
+                log(f"✅ 重连后 Cloudflare 已自动通过（第 {attempt+1} 次）")
+                return True
+
+            # 状态为 waiting（等待点击）时，激活窗口并点击
+            if status in ('waiting', 'unknown', 'verifying'):
+                # 激活浏览器窗口（uc_gui_click_captcha 需要窗口在前台）
+                _activate_window()
+                time.sleep(0.5)
+
+                log(f"🖱️  调用 uc_gui_click_captcha()（第 {attempt+1} 次）")
+                sb.uc_gui_click_captcha()
+                time.sleep(random.uniform(4, 7))
+
+                # 检查状态变化
+                new_status = get_turnstile_status(sb)
+                log(f"   点击后状态: {new_status}")
+                if new_status == 'success' or is_turnstile_solved(sb):
+                    log(f"✅ 点击后 Turnstile 已通过（第 {attempt+1} 次）")
+                    return True
+                if new_status == 'verifying':
+                    log("   正在验证中，继续等待...")
+                    for _ in range(10):
+                        time.sleep(1)
+                        if get_turnstile_status(sb) == 'success' or is_turnstile_solved(sb):
+                            log(f"✅ 验证中转为成功（第 {attempt+1} 次）")
+                            return True
         except Exception as e:
-            log(f"⚠️ 策略 [{name}] 异常: {e}")
-        time.sleep(1)
-    log("\n❌ 所有策略均未能通过 Cloudflare 验证")
+            log(f"⚠️ 主策略第 {attempt+1} 次异常: {e}")
+        time.sleep(2)
+
+    log("⚠️ 主策略未能通过，尝试备用策略...")
+
+    # ===== 备用策略 1: xdotool 物理点击 =====
+    if _cf_xdotool_click(sb):
+        log("🎉 备用策略 [xdotool物理点击] 成功通过！")
+        return True
+
+    # ===== 备用策略 2: JS 遍历点击 =====
+    if _cf_js_click_all(sb):
+        log("🎉 备用策略 [JS遍历点击] 成功通过！")
+        return True
+
+    # ===== 备用策略 3: 随机鼠标移动 =====
+    if _cf_random_mouse(sb):
+        log("🎉 备用策略 [随机鼠标移动] 成功通过！")
+        return True
+
+    log("❌ 所有策略均未能通过 Cloudflare 验证")
     return False
 
 
@@ -888,10 +1056,18 @@ def login_by_cookie(sb) -> bool:
         return False
     log("🍪 尝试 Cookie 登录...")
     try:
-        # 先打开站点，让浏览器建立域名上下文
-        sb.open(Config.BASE_URL)
-        sb.wait_for_ready_state_complete()
+        # 使用 uc_open_with_reconnect 打开站点（UC 模式，更好地处理 Cloudflare）
+        # uc_open_with_reconnect 会断开驱动连接避免被 Cloudflare 检测
+        sb.uc_open_with_reconnect(Config.BASE_URL, reconnect_time=4)
         time.sleep(2)
+
+        # 如果首次打开就遇到 Cloudflare，先解决
+        if is_cloudflare_present(sb):
+            log("🔒 首次打开遇到 Cloudflare，尝试通过...")
+            if not solve_cloudflare(sb):
+                log("❌ 首次打开时 Cloudflare 验证失败")
+                return False
+            time.sleep(2)
 
         # 设置 Cookie（带完整属性）
         cookie_domain = Config.COOKIE_DOMAIN or urllib.parse.urlparse(Config.BASE_URL).hostname
@@ -905,14 +1081,14 @@ def login_by_cookie(sb) -> bool:
         })
         log(f"✅ Cookie 已设置: {Config.COOKIE_NAME} (domain={cookie_domain})")
 
-        # 刷新页面，让 Cookie 生效
-        sb.refresh()
-        sb.wait_for_ready_state_complete()
+        # 使用 uc_open_with_reconnect 重新加载页面让 Cookie 生效
+        # 不要用 sb.refresh() —— uc_open_with_reconnect 才能正确处理 Cloudflare
+        sb.uc_open_with_reconnect(Config.BASE_URL, reconnect_time=4)
         time.sleep(3)
 
-        # 处理 Cloudflare
+        # 处理 Cookie 生效后可能出现的 Cloudflare
         if is_cloudflare_present(sb):
-            log("🔒 遇到 Cloudflare，尝试通过...")
+            log("🔒 Cookie 设置后遇到 Cloudflare，尝试通过...")
             if not solve_cloudflare(sb):
                 log("❌ Cookie 登录时 Cloudflare 验证失败")
                 return False
@@ -977,7 +1153,7 @@ def login_by_password(sb) -> bool:
     log("🔑 尝试账号密码登录...")
     try:
         log(f"🌐 打开登录页: {Config.login_url()}")
-        sb.uc_open_with_reconnect(Config.login_url(), reconnect_time=5)
+        sb.uc_open_with_reconnect(Config.login_url(), reconnect_time=6)
         time.sleep(3)
         if is_cloudflare_present(sb):
             log("🔒 遇到 Cloudflare，尝试通过...")
@@ -1359,10 +1535,10 @@ def _navigate_to_servers(sb) -> bool:
         pass
 
     # 方式2：直接访问 BASE_URL 根路径（IceHost 登录后默认就是服务器列表）
+    # 使用 uc_open_with_reconnect 避免 Cloudflare 检测
     log("⚠️  侧边栏点击失败，尝试直接访问根路径...")
     try:
-        sb.open(Config.BASE_URL)
-        sb.wait_for_ready_state_complete()
+        sb.uc_open_with_reconnect(Config.BASE_URL, reconnect_time=4)
         time.sleep(3)
         return True
     except Exception as e:

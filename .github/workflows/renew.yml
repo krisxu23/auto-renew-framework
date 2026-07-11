@@ -1,0 +1,133 @@
+name: Auto Renew Framework
+ 
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+ 
+permissions:
+  actions: write
+  contents: read
+ 
+jobs:
+  auto-renew:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+ 
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+ 
+      - name: ⚙ 设置 Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+ 
+      - name: 🛠️ 安装系统依赖和 Python 依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb x11-utils xdotool scrot fonts-noto-cjk jq wget
+          pip install seleniumbase requests 'requests[socks]'
+          seleniumbase install chromedriver
+ 
+      - name: ⚙ 设置代理 (sing-box)
+        id: proxy
+        continue-on-error: true
+        env:
+          NODE_LINK: ${{ secrets.NODE_LINK }}
+        run: |
+          if [ -z "$NODE_LINK" ]; then
+            echo "未配置 NODE_LINK，跳过代理"
+            echo "IS_PROXY=false" >> $GITHUB_ENV
+            exit 0
+          fi
+          
+          echo "配置代理节点..."
+          python3 -c "
+          import sys, os
+          sys.path.insert(0, '.')
+          os.environ['NODE_LINK'] = os.environ.get('NODE_LINK', '')
+          from core.proxy import parse_node_link, generate_singbox_config, download_singbox, start_singbox
+          nodes = parse_node_link(os.environ['NODE_LINK'])
+          print(f'解析到 {len(nodes)} 个节点')
+          if nodes:
+              download_singbox()
+              generate_singbox_config(nodes)
+              print('配置生成完成')
+          "
+          
+          if [ -f sing-box ] && [ -f sing-box-config.json ]; then
+            nohup ./sing-box run -c sing-box-config.json > sing-box.log 2>&1 &
+            sleep 3
+            if pgrep -f "sing-box" > /dev/null; then
+              echo "✅ sing-box 已启动"
+              echo "IS_PROXY=true" >> $GITHUB_ENV
+              echo "PROXY_SERVER=http://127.0.0.1:1080" >> $GITHUB_ENV
+            else
+              echo "❌ sing-box 启动失败"
+              echo "IS_PROXY=false" >> $GITHUB_ENV
+            fi
+          else
+            echo "❌ 代理配置失败"
+            echo "IS_PROXY=false" >> $GITHUB_ENV
+          fi
+ 
+      - name: 🚀 运行续期脚本
+        env:
+          BASE_URL: ${{ secrets.BASE_URL }}
+          LOGIN_PATH: ${{ secrets.LOGIN_PATH }}
+          DASHBOARD_PATH: ${{ secrets.DASHBOARD_PATH }}
+          COOKIE_DOMAIN: ${{ secrets.COOKIE_DOMAIN }}
+ 
+          EMAIL: ${{ secrets.EMAIL }}
+          PASSWORD: ${{ secrets.PASSWORD }}
+ 
+          COOKIE_NAME: ${{ secrets.COOKIE_NAME }}
+          COOKIE_VALUE: ${{ secrets.COOKIE_VALUE }}
+ 
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          DISCORD_CLIENT_ID: ${{ secrets.DISCORD_CLIENT_ID }}
+          DISCORD_REDIRECT_URI: ${{ secrets.DISCORD_REDIRECT_URI }}
+          DISCORD_LOGIN_PATH: ${{ secrets.DISCORD_LOGIN_PATH }}
+ 
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_SECRET_NAME: ${{ secrets.GH_SECRET_NAME }}
+ 
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+ 
+          PLATFORM_NAME: ${{ secrets.PLATFORM_NAME }}
+          PLATFORM_FLAG: ${{ secrets.PLATFORM_FLAG }}
+ 
+          IS_PROXY: ${{ env.IS_PROXY }}
+          PROXY_SERVER: ${{ env.PROXY_SERVER }}
+ 
+          HEADLESS: "false"
+        run: |
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" \
+            python3 app.py
+ 
+      - name: 🧽 清理进程和临时文件
+        if: always()
+        run: |
+          pkill -f sing-box || true
+          pkill -f chromedriver || true
+          pkill -f chrome || true
+          pkill -f Xvfb || true
+          rm -f sing-box sing-box-config.json sing-box.log
+          rm -f *.png
+ 
+      - name: 🧹 清理旧的工作流运行记录
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          runs=$(gh run list --workflow="${{ github.workflow }}" --limit=100 --json databaseId --jq '.[].databaseId')
+          count=0
+          for run_id in $runs; do
+            count=$((count + 1))
+            if [ $count -gt 1 ]; then
+              echo "删除运行记录: $run_id"
+              gh run delete $run_id || true
+            fi
+          done

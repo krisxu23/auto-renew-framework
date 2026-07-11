@@ -3,7 +3,6 @@ import time
 import json
 import urllib.parse
 import requests
-# 引入 SeleniumBase 高级过盾包
 from seleniumbase import SB
 
 SERVER_URL = os.getenv("ICEHOST_SERVER_URL")
@@ -108,17 +107,34 @@ def run():
             send_tg_notification(msg, "icehost_debug_screenshot.png")
             return
 
-        # 5. 判定波兰语红框限制
+        # 5. 判定波兰语/英语红框限制（同时检测两种语言）
         page_source = sb.get_page_source()
-        keywords = ["Nie możesz przedłużyć", "niedawno to zrobiłeś", "kolejne 6 godziny"]
+        # 根据实际页面错误文本，补充或修改下列英文/波兰语关键词
+        keywords = [
+            # 波兰语
+            "Nie możesz przedłużyć",
+            "niedawno to zrobiłeś",
+            "kolejne 6 godziny",
+            # 英语（请根据实际英文界面提示调整）
+            "You cannot extend",
+            "you have recently done",
+            "next 6 hours"
+        ]
         is_limited = any(kw in page_source for kw in keywords)
 
         if is_limited:
             print("检测到红框限制提示：说明未到可续期时间。结束本次运行（不发送 Telegram 提醒）。")
             return
 
-        # 6. 安全寻找并点击续期按钮
-        renew_btn_selector = "//*[not(*) and contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'dodaj 6')]"
+        # 6. 安全寻找并点击续期按钮（同时匹配波兰语和英语文本）
+        # 根据实际英文按钮文本，可增删或修改 contains 中的字符串（已转小写匹配）
+        renew_btn_selector = (
+            "//*[not(*) and ("
+            "contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'dodaj 6') or "
+            "contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'add 6') or "
+            "contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'extend 6')"
+            ")]"
+        )
         
         try:
             print("正在等待续期按钮加载...")

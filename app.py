@@ -766,27 +766,68 @@ def login_by_cookie(sb) -> bool:
         return False
     log("🍪 尝试 Cookie 登录...")
     try:
+        # 先打开站点，让浏览器建立域名上下文
         sb.open(Config.BASE_URL)
         sb.wait_for_ready_state_complete()
         time.sleep(2)
+
+        # 设置 Cookie（带完整属性）
         cookie_domain = Config.COOKIE_DOMAIN or urllib.parse.urlparse(Config.BASE_URL).hostname
-        sb.add_cookie({"name": Config.COOKIE_NAME, "value": Config.COOKIE_VALUE, "domain": cookie_domain})
-        log(f"🌐 访问 {Config.dashboard_url()} ...")
-        sb.open(Config.dashboard_url())
+        sb.add_cookie({
+            "name": Config.COOKIE_NAME,
+            "value": Config.COOKIE_VALUE,
+            "domain": cookie_domain,
+            "path": "/",
+            "secure": True,
+            "httpOnly": True,
+        })
+        log(f"✅ Cookie 已设置: {Config.COOKIE_NAME} (domain={cookie_domain})")
+
+        # 刷新页面，让 Cookie 生效
+        sb.refresh()
         sb.wait_for_ready_state_complete()
         time.sleep(3)
+
+        # 处理 Cloudflare
         if is_cloudflare_present(sb):
             log("🔒 遇到 Cloudflare，尝试通过...")
             if not solve_cloudflare(sb):
                 log("❌ Cookie 登录时 Cloudflare 验证失败")
                 return False
+            time.sleep(2)
+
+        # 检查当前 URL
         current_url = sb.get_current_url()
         log(f"📝 当前URL: {current_url}")
-        if Config.LOGIN_PATH not in current_url and "login" not in current_url.lower():
+
+        # 等待可能的 Laravel remember_web 重定向
+        for _ in range(10):
+            url_lower = sb.get_current_url().lower()
+            if "login" not in url_lower and Config.LOGIN_PATH not in sb.get_current_url():
+                break
+            time.sleep(1)
+
+        current_url = sb.get_current_url()
+        url_lower = current_url.lower()
+
+        # 检查页面是否有登录表单（双重验证）
+        has_login_form = False
+        try:
+            has_login_form = sb.execute_script("""
+                return !!(document.querySelector('input[name="email"]') ||
+                          document.querySelector('input[name="password"]') ||
+                          document.querySelector('input[type="password"]'));
+            """)
+        except Exception:
+            pass
+
+        if "login" not in url_lower and Config.LOGIN_PATH not in current_url and not has_login_form:
             _current_login_method = LOGIN_METHOD_COOKIE
             log("✅ Cookie 登录成功")
             return True
-        log("❌ Cookie 已失效，跳转到了登录页")
+
+        log(f"❌ Cookie 登录失败，仍在登录页: {current_url}")
+        sb.save_screenshot("cookie_login_fail.png")
         return False
     except Exception as e:
         log(f"❌ Cookie 登录异常: {e}")

@@ -45,7 +45,7 @@ class Config:
     EMAIL    = os.environ.get("EMAIL", "")
     PASSWORD = os.environ.get("PASSWORD", "")
 
-    # Cookie 登录（如果 COOKIE_NAME 为空，使用 IceHost 默认值）
+    # Cookie 登录
     COOKIE_NAME   = os.environ.get("COOKIE_NAME", "").strip() or "remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d"
     COOKIE_VALUE  = os.environ.get("COOKIE_VALUE", "")
     COOKIE_DOMAIN = os.environ.get("COOKIE_DOMAIN", "").strip() or "dash.icehost.pl"
@@ -54,11 +54,11 @@ class Config:
     DISCORD_TOKEN        = os.environ.get("DISCORD_TOKEN", "")
     DISCORD_CLIENT_ID    = os.environ.get("DISCORD_CLIENT_ID", "")
     DISCORD_REDIRECT_URI = os.environ.get("DISCORD_REDIRECT_URI", "")
-    DISCORD_LOGIN_PATH   = os.environ.get("DISCORD_LOGIN_PATH", "/login/discord")
+    DISCORD_LOGIN_PATH   = os.environ.get("DISCORD_LOGIN_PATH", "")
 
     # Cookie 自动更新到 GitHub Secrets
-    GH_TOKEN      = os.environ.get("GH_TOKEN", "")
-    GH_SECRET_NAME = os.environ.get("GH_SECRET_NAME", "COOKIE_VALUE")
+    GH_TOKEN       = os.environ.get("GH_TOKEN", "")
+    GH_SECRET_NAME = os.environ.get("GH_SECRET_NAME", "").strip() or "COOKIE_VALUE"
 
     # Telegram 通知
     TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN", "")
@@ -74,7 +74,7 @@ class Config:
 
     # 通知显示
     PLATFORM_NAME  = os.environ.get("PLATFORM_NAME", "Unknown Platform")
-    PLATFORM_FLAG  = os.environ.get("PLATFORM_FLAG", "🏳️")
+    PLATFORM_FLAG  = os.environ.get("PLATFORM_FLAG", "").strip() or "🏳️"
 
     # Cookie 更新阈值（天）
     COOKIE_UPDATE_THRESHOLD_DAYS = int(os.environ.get("COOKIE_UPDATE_THRESHOLD_DAYS", "3"))
@@ -766,12 +766,10 @@ def login_by_cookie(sb) -> bool:
         return False
     log(f"🍪 尝试 Cookie 登录 (Cookie名: {Config.COOKIE_NAME})...")
     try:
-        # 先打开站点，让浏览器建立域名上下文
         sb.open(Config.BASE_URL)
         sb.wait_for_ready_state_complete()
         time.sleep(2)
 
-        # 设置 Cookie（带完整属性）
         cookie_domain = Config.COOKIE_DOMAIN or urllib.parse.urlparse(Config.BASE_URL).hostname
         sb.add_cookie({
             "name": Config.COOKIE_NAME,
@@ -783,12 +781,10 @@ def login_by_cookie(sb) -> bool:
         })
         log(f"✅ Cookie 已设置: {Config.COOKIE_NAME} (domain={cookie_domain})")
 
-        # 刷新页面，让 Cookie 生效
         sb.refresh()
         sb.wait_for_ready_state_complete()
         time.sleep(3)
 
-        # 处理 Cloudflare
         if is_cloudflare_present(sb):
             log("🔒 遇到 Cloudflare，尝试通过...")
             if not solve_cloudflare(sb):
@@ -796,11 +792,9 @@ def login_by_cookie(sb) -> bool:
                 return False
             time.sleep(2)
 
-        # 检查当前 URL
         current_url = sb.get_current_url()
         log(f"📝 当前URL: {current_url}")
 
-        # 等待可能的重定向
         for _ in range(10):
             url_lower = sb.get_current_url().lower()
             if "login" not in url_lower and Config.LOGIN_PATH not in sb.get_current_url():
@@ -810,7 +804,6 @@ def login_by_cookie(sb) -> bool:
         current_url = sb.get_current_url()
         url_lower = current_url.lower()
 
-        # 检查页面是否有登录表单（双重验证）
         has_login_form = False
         try:
             has_login_form = sb.execute_script("""
@@ -845,7 +838,6 @@ def login_by_password(sb) -> bool:
         sb.uc_open_with_reconnect(Config.login_url(), reconnect_time=5)
         time.sleep(3)
 
-        # 处理 Cloudflare
         if is_cloudflare_present(sb):
             log("🔒 遇到 Cloudflare，尝试通过...")
             if not solve_cloudflare(sb):
@@ -853,7 +845,6 @@ def login_by_password(sb) -> bool:
                 return False
             time.sleep(2)
 
-        # 等待登录表单出现（支持多种字段名）
         input_selector = None
         for sel in ['input[name="username"]', 'input[name="email"]', 'input[name="Email"]',
                      'input[type="email"]', 'input[type="text"]']:
@@ -870,7 +861,6 @@ def login_by_password(sb) -> bool:
             sb.save_screenshot("login_load_fail.png")
             return False
 
-        # 关闭 cookie 弹窗等
         try:
             for btn in sb.find_elements("button"):
                 txt = (btn.text or "").lower()
@@ -881,26 +871,21 @@ def login_by_password(sb) -> bool:
         except Exception:
             pass
 
-        # 填写用户名/邮箱
         log(f"📧 填写用户名: {Config.EMAIL}")
         js_fill_input(sb, input_selector, Config.EMAIL)
         time.sleep(0.3)
 
-        # 填写密码
         log("🔑 填写密码...")
         js_fill_input(sb, 'input[name="password"]', Config.PASSWORD)
         time.sleep(1)
 
-        # 提交前再次检查 Cloudflare
         if is_cloudflare_present(sb):
             solve_cloudflare(sb)
             time.sleep(1)
 
-        # 点击提交按钮（支持多种按钮文本）
         log("🖱️  提交登录表单...")
         submitted = False
 
-        # 方式1：JS 点击所有可能的提交按钮
         try:
             submitted = sb.execute_script("""
                 (function(){
@@ -919,7 +904,6 @@ def login_by_password(sb) -> bool:
         except Exception:
             pass
 
-        # 方式2：回车提交
         if not submitted:
             try:
                 sb.press_keys('input[name="password"]', '\n')
@@ -927,7 +911,6 @@ def login_by_password(sb) -> bool:
             except Exception:
                 pass
 
-        # 方式3：点击 submit 按钮
         if not submitted:
             try:
                 sb.click('button[type="submit"]')
@@ -1092,7 +1075,7 @@ def build_notification(status: str, extra: str = "", error: str = "",
     masked_email = mask_email(Config.EMAIL) if Config.EMAIL else "未填写"
     lines = [f"{Config.PLATFORM_FLAG} {Config.PLATFORM_NAME} 续期通知", "", f"{status}",
              f"👤 登录账户: {masked_email}"]
-    if login_method and login_method != "Cookie":
+    if login_method:
         lines.append(f"🔐 登录方式: {login_method}")
     if expiry_date:
         lines.append(f"📅 到期时间: {expiry_date}")
@@ -1103,27 +1086,19 @@ def build_notification(status: str, extra: str = "", error: str = "",
     lines.append(f"⏱️  执行时间: {beijing_time_str()}")
     return "\n".join(lines)
 
-def notify_login_success(login_method: str = ""):
-    send_telegram_message(build_notification("✅ 登录成功", login_method=login_method))
+def notify_final(status: str, extra: str = "", error: str = "",
+                 expiry_date: str = "", login_method: str = ""):
+    """只发送一条最终汇总通知"""
+    send_telegram_message(build_notification(status, extra, error, expiry_date, login_method))
 
 def notify_login_failure(error: str = "未知错误"):
     send_telegram_message(build_notification("❌ 登录失败", error=error))
-
-def notify_renew_success(extra: str = "", expiry_date: str = ""):
-    send_telegram_message(build_notification("✅ 续期成功", extra=extra, expiry_date=expiry_date))
-
-def notify_renew_failure(error: str = "未知错误", extra: str = ""):
-    send_telegram_message(build_notification("❌ 续期失败", extra=extra, error=error))
-
-def notify_not_time(extra: str = "", expiry_date: str = ""):
-    send_telegram_message(build_notification("⏳ 未到续期时间", extra=extra, expiry_date=expiry_date))
 
 # ============================================================
 #  IceHost 续期动作
 # ============================================================
 
 def _parse_expiry_date(date_str: str):
-    """解析到期时间字符串，返回 datetime 对象"""
     date_str = date_str.strip()
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d", "%d.%m.%Y %H:%M:%S", "%d.%m.%Y"):
         try:
@@ -1133,14 +1108,51 @@ def _parse_expiry_date(date_str: str):
     return None
 
 def _find_server_cards(sb) -> list:
-    """通过 JS 查找页面上所有服务器卡片"""
+    """通过 JS 查找页面上所有服务器卡片，多种选择器尝试"""
     js = """
     (function(){
+        // 方式1: draggable="true" 元素
         var cards = document.querySelectorAll('[draggable="true"]');
+        // 方式2: 带 fa-server 图标的容器
+        if (cards.length === 0) {
+            cards = document.querySelectorAll('[class*="sc-1ibsw91"]');
+        }
+        // 方式3: 带 "Przedłuż" 或 "Extend" 按钮的容器
+        if (cards.length === 0) {
+            var allBtns = document.querySelectorAll('button');
+            var cardSet = new Set();
+            allBtns.forEach(function(b){
+                var txt = (b.textContent || '').toLowerCase();
+                if (txt.includes('przedłuż') || txt.includes('extend') || txt.includes('renew')) {
+                    var p = b;
+                    for (var i = 0; i < 10; i++) {
+                        p = p.parentElement;
+                        if (!p) break;
+                        if (p.querySelector('p') && p.querySelectorAll('button').length > 0) {
+                            cardSet.add(p);
+                            break;
+                        }
+                    }
+                }
+            });
+            cards = Array.from(cardSet);
+        }
         var results = [];
         cards.forEach(function(card, idx){
             var nameEl = card.querySelector('p');
+            // 多种方式找日期
             var dateEl = card.querySelector('.sc-1ibsw91-1, [class*="cUvpcr"]');
+            if (!dateEl) {
+                // 尝试找所有包含日期格式的文本
+                var allText = card.querySelectorAll('p, span, div');
+                for (var t = 0; t < allText.length; t++) {
+                    var txt = (allText[t].textContent || '').trim();
+                    if (/\\d{4}-\\d{2}-\\d{2}/.test(txt) || /\\d{2}\\.\\d{2}\\.\\d{4}/.test(txt)) {
+                        dateEl = allText[t];
+                        break;
+                    }
+                }
+            }
             var name = nameEl ? nameEl.textContent.trim() : '';
             var expiry = dateEl ? dateEl.textContent.trim() : '';
             var renewBtn = null;
@@ -1173,10 +1185,10 @@ def _find_server_cards(sb) -> list:
         return []
 
 def _click_renew_button(sb, card_index: int) -> bool:
-    """点击指定卡片的续期按钮"""
     js = f"""
     (function(){{
         var cards = document.querySelectorAll('[draggable="true"]');
+        if (cards.length === 0) cards = document.querySelectorAll('[class*="sc-1ibsw91"]');
         var card = cards[{card_index}];
         if (!card) return false;
         var btns = card.querySelectorAll('button');
@@ -1197,7 +1209,6 @@ def _click_renew_button(sb, card_index: int) -> bool:
         return False
 
 def _click_confirm_button(sb, timeout: int = 10) -> bool:
-    """在弹出的确认窗口中点击确认按钮（波兰语/英语/德语）"""
     start = time.time()
     while time.time() - start < timeout:
         js = """
@@ -1236,7 +1247,7 @@ def _navigate_to_servers(sb) -> bool:
     # 方式1：点击侧边栏 Server/Serwery 链接
     js_click_sidebar = """
     (function(){
-        var links = document.querySelectorAll('a.sidebar-link, a[href="/"], nav a, aside a');
+        var links = document.querySelectorAll('a.sidebar-link, a[href="/"], nav a, aside a, a');
         for (var i = 0; i < links.length; i++) {
             var txt = (links[i].textContent || '').toLowerCase().trim();
             if (txt.includes('serwer') || txt.includes('server') || txt.includes('serwery') ||
@@ -1289,12 +1300,49 @@ def do_renew(sb) -> tuple:
             return "FAIL", "Cloudflare 验证未通过", ""
         time.sleep(2)
 
-    # 步骤2：查找所有服务器卡片
-    time.sleep(2)
-    cards = _find_server_cards(sb)
+    # 步骤2：查找所有服务器卡片（带重试，React SPA 需要时间渲染）
+    cards = []
+    for retry in range(5):
+        time.sleep(3)
+        cards = _find_server_cards(sb)
+        if cards:
+            break
+        log(f"⏳ 第 {retry + 1} 次未找到服务器卡片，等待页面加载...")
+        # 每次重试前刷新一次
+        if retry == 2:
+            log("🔄 刷新页面重试...")
+            sb.refresh()
+            sb.wait_for_ready_state_complete()
+            time.sleep(5)
+            if is_cloudflare_present(sb):
+                solve_cloudflare(sb)
+                time.sleep(2)
+
     if not cards:
-        log("❌ 未找到任何服务器卡片")
+        log("❌ 重试5次后仍未找到任何服务器卡片")
         sb.save_screenshot("no_servers.png")
+        # 打印页面信息用于调试
+        try:
+            page_url = sb.get_current_url()
+            log(f"📝 当前页面URL: {page_url}")
+            page_title = sb.execute_script("return document.title")
+            log(f"📝 页面标题: {page_title}")
+            # 打印页面上所有按钮文本
+            btn_texts = sb.execute_script("""
+                return Array.from(document.querySelectorAll('button')).map(function(b){
+                    return b.textContent.trim();
+                }).filter(function(t){return t;});
+            """)
+            log(f"📝 页面按钮: {btn_texts}")
+            # 打印页面上所有链接文本
+            link_texts = sb.execute_script("""
+                return Array.from(document.querySelectorAll('a')).map(function(a){
+                    return a.textContent.trim() + ' -> ' + a.href;
+                }).filter(function(t){return t;});
+            """)
+            log(f"📝 页面链接: {link_texts}")
+        except Exception as e:
+            log(f"❌ 调试信息获取失败: {e}")
         return "FAIL", "未找到服务器卡片", ""
 
     log(f"📋 找到 {len(cards)} 个服务器:")
@@ -1323,7 +1371,6 @@ def do_renew(sb) -> tuple:
         log(f"\n📅 [{server_name}] 当前到期时间: {expiry_str}")
         old_expiry = expiry_str
 
-        # 直接点击续期按钮，不判断到期时间
         log(f"🔄 [{server_name}] 开始续期...")
 
         if not _click_renew_button(sb, card_idx):
@@ -1335,7 +1382,6 @@ def do_renew(sb) -> tuple:
         log("⏳ 等待确认弹窗...")
         time.sleep(2)
 
-        # 步骤4：点击确认按钮
         if not _click_confirm_button(sb, timeout=10):
             log(f"❌ [{server_name}] 未找到确认按钮")
             results.append(f"❌ {server_name}: 确认按钮未找到")
@@ -1343,26 +1389,22 @@ def do_renew(sb) -> tuple:
             failed_count += 1
             continue
 
-        # 步骤5：等待续期完成
         log("⏳ 等待续期处理...")
         time.sleep(5)
 
-        # 处理可能的 Cloudflare
         if is_cloudflare_present(sb):
             solve_cloudflare(sb)
             time.sleep(2)
 
-        # 步骤6：刷新页面，重新读取到期时间
         log("🔄 刷新页面验证续期结果...")
         sb.refresh()
         sb.wait_for_ready_state_complete()
-        time.sleep(3)
+        time.sleep(5)
 
         if is_cloudflare_present(sb):
             solve_cloudflare(sb)
             time.sleep(2)
 
-        # 重新查找服务器卡片
         new_cards = _find_server_cards(sb)
         new_expiry_str = ""
         for nc in new_cards:
@@ -1373,7 +1415,7 @@ def do_renew(sb) -> tuple:
         if not new_expiry_str:
             log(f"⚠️  [{server_name}] 刷新后未找到服务器，尝试重新导航...")
             _navigate_to_servers(sb)
-            time.sleep(3)
+            time.sleep(5)
             new_cards = _find_server_cards(sb)
             for nc in new_cards:
                 if nc["name"] == server_name:
@@ -1481,19 +1523,19 @@ def main():
 
             login_method = get_login_method()
             log(f"✅ 登录成功，方式: {login_method}")
-            notify_login_success(login_method=login_method)
 
             status, extra_info, expiry_date = do_renew(sb)
 
+            # 只在最后发送一条汇总通知
             if status == "SUCCESS":
                 log("🎉 续期成功！")
-                notify_renew_success(extra=extra_info, expiry_date=expiry_date)
+                notify_final(f"✅ 续期成功", extra=extra_info, expiry_date=expiry_date, login_method=login_method)
             elif status == "NOT_TIME":
                 log("⏳ 未到续期时间")
-                notify_not_time(extra=extra_info, expiry_date=expiry_date)
+                notify_final(f"⏳ 无需续期", extra=extra_info, expiry_date=expiry_date, login_method=login_method)
             else:
                 log("❌ 续期失败")
-                notify_renew_failure(error=extra_info)
+                notify_final(f"❌ 续期失败", extra=extra_info, login_method=login_method)
 
             if Config.GH_TOKEN and Config.COOKIE_NAME:
                 log("\n🔄 检查并更新 Cookie...")
@@ -1510,7 +1552,7 @@ def main():
         import traceback
         traceback.print_exc()
         try:
-            notify_renew_failure(error=f"未捕获异常: {e}")
+            notify_final(f"❌ 脚本异常", error=str(e))
         except Exception:
             pass
         sys.exit(1)

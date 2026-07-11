@@ -1,12 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
-"""
-自动续期框架 —— 综合优化版（单文件）
-集成：代理配置 / Cloudflare 多策略验证 / 三种登录方式 / Cookie 持久化 / TG 通知 / 清理
-依赖：seleniumbase, requests
-"""
-
 import os
 import re
 import sys
@@ -21,14 +12,12 @@ from datetime import datetime
 import requests
 from seleniumbase import SB
 
-
 # ============================================================
 #  工具函数
 # ============================================================
 
 def log(message: str):
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {message}", flush=True)
-
 
 def mask_email(email: str) -> str:
     if '@' in email:
@@ -38,11 +27,9 @@ def mask_email(email: str) -> str:
         return f"{name}@{domain}"
     return email[:2] + '****'
 
-
 def beijing_time_str() -> str:
     local_time = time.gmtime(time.time() + 8 * 3600)
     return time.strftime("%Y-%m-%d %H:%M:%S", local_time)
-
 
 # ============================================================
 #  配置管理
@@ -120,7 +107,6 @@ class Config:
     def dashboard_url(cls) -> str:
         return f"{cls.BASE_URL}{cls.DASHBOARD_PATH}"
 
-
 # ============================================================
 #  浏览器工具
 # ============================================================
@@ -135,7 +121,6 @@ def get_current_ip() -> str:
     except Exception as e:
         log(f"❌ 获取出口IP失败: {e}")
         return "获取失败"
-
 
 def js_fill_input(sb, selector: str, text: str):
     safe_text = text.replace('\\', '\\\\').replace('"', '\\"')
@@ -153,7 +138,6 @@ def js_fill_input(sb, selector: str, text: str):
         el.dispatchEvent(new Event('change', {{ bubbles: true }}));
     }})()
     """)
-
 
 def _activate_window():
     for cls in ["chrome", "chromium", "Chromium", "Chrome", "google-chrome"]:
@@ -174,7 +158,6 @@ def _activate_window():
     except Exception:
         pass
 
-
 def xdotool_click(x: int, y: int):
     _activate_window()
     try:
@@ -184,7 +167,6 @@ def xdotool_click(x: int, y: int):
         subprocess.run(["xdotool", "click", "1"], timeout=2, stderr=subprocess.DEVNULL)
     except Exception:
         os.system(f"xdotool mousemove {x} {y} click 1 2>/dev/null")
-
 
 _WININFO_JS = """
 (function(){
@@ -197,7 +179,6 @@ _WININFO_JS = """
 })()
 """
 
-
 def screen_to_abs(sb, cx: int, cy: int) -> tuple:
     try:
         wi = sb.execute_script(_WININFO_JS)
@@ -208,7 +189,6 @@ def screen_to_abs(sb, cx: int, cy: int) -> tuple:
     ay = cy + wi["sy"] + bar
     return ax, ay
 
-
 # ============================================================
 #  代理配置（sing-box，支持 VMess / VLESS / SS / Trojan / 订阅链接）
 # ============================================================
@@ -216,7 +196,6 @@ def screen_to_abs(sb, cx: int, cy: int) -> tuple:
 SINGBOX_BIN   = os.path.join(os.getcwd(), "sing-box")
 SINGBOX_CONFIG = os.path.join(os.getcwd(), "sing-box-config.json")
 SINGBOX_LOG   = os.path.join(os.getcwd(), "sing-box.log")
-
 
 def _decode_base64(s: str) -> str:
     s = s.strip()
@@ -231,7 +210,6 @@ def _decode_base64(s: str) -> str:
         except Exception:
             return ""
 
-
 def _parse_vmess(link: str) -> dict:
     raw = link.replace("vmess://", "").strip()
     decoded = _decode_base64(raw)
@@ -241,7 +219,6 @@ def _parse_vmess(link: str) -> dict:
         return json.loads(decoded)
     except Exception:
         return {}
-
 
 def _parse_ss(link: str) -> dict:
     link = link.replace("ss://", "").strip()
@@ -263,7 +240,6 @@ def _parse_ss(link: str) -> dict:
                     "method": method, "id": "", "type": "ss"}
     return {}
 
-
 def _parse_trojan(link: str) -> dict:
     link = link.replace("trojan://", "").strip()
     if "@" not in link:
@@ -275,7 +251,6 @@ def _parse_trojan(link: str) -> dict:
         return {"v": "2", "ps": "trojan", "add": server, "port": port,
                 "id": password, "type": "trojan"}
     return {}
-
 
 def _parse_vless(link: str) -> dict:
     link = link.replace("vless://", "").strip()
@@ -299,7 +274,6 @@ def _parse_vless(link: str) -> dict:
                 "spx": params.get("spx", "")}
     return {}
 
-
 def _parse_single_link(link: str) -> dict:
     link = link.strip()
     if link.startswith("vmess://"):
@@ -311,7 +285,6 @@ def _parse_single_link(link: str) -> dict:
     elif link.startswith("vless://"):
         return _parse_vless(link)
     return {}
-
 
 def _parse_subscription(url: str) -> list:
     proxies = {"http": Config.PROXY_SERVER, "https": Config.PROXY_SERVER} if Config.IS_PROXY else None
@@ -329,7 +302,6 @@ def _parse_subscription(url: str) -> list:
     except Exception as e:
         log(f"❌ 订阅拉取失败: {e}")
         return []
-
 
 def parse_node_link(link: str) -> list:
     link = link.strip()
@@ -351,7 +323,6 @@ def parse_node_link(link: str) -> list:
                 if n:
                     nodes.append(n)
     return nodes
-
 
 def _build_singbox_outbounds(nodes: list) -> list:
     outbounds = []
@@ -394,7 +365,6 @@ def _build_singbox_outbounds(nodes: list) -> list:
                 "tls": {"enabled": True, "server_name": node.get("add", "")}})
     return [o for o in outbounds if o.get("server") and o.get("server_port")]
 
-
 def generate_singbox_config(nodes: list) -> str:
     outbounds = _build_singbox_outbounds(nodes)
     if not outbounds:
@@ -411,7 +381,6 @@ def generate_singbox_config(nodes: list) -> str:
     with open(SINGBOX_CONFIG, "w", encoding="utf-8") as f:
         json.dump(config, f, ensure_ascii=False, indent=2)
     return SINGBOX_CONFIG
-
 
 def download_singbox() -> bool:
     if os.path.exists(SINGBOX_BIN) and os.access(SINGBOX_BIN, os.X_OK):
@@ -439,7 +408,6 @@ def download_singbox() -> bool:
         log(f"❌ sing-box 下载失败: {e}")
         return False
 
-
 def start_singbox() -> bool:
     if not Config.NODE_LINK:
         log("ℹ️  未配置 NODE_LINK，跳过代理启动")
@@ -466,7 +434,6 @@ def start_singbox() -> bool:
         log(f"❌ sing-box 启动失败: {e}")
         return False
 
-
 def stop_singbox():
     try:
         subprocess.run(["pkill", "-f", "sing-box"], stderr=subprocess.DEVNULL)
@@ -474,7 +441,6 @@ def stop_singbox():
         log("🧹 sing-box 已停止")
     except Exception:
         pass
-
 
 # ============================================================
 #  Cloudflare 验证（6 种策略逐一尝试）
@@ -572,14 +538,12 @@ _MOUSE_MOVE_JS = """
 })()
 """
 
-
 def is_cloudflare_present(sb) -> bool:
     try:
         src = (sb.get_page_source() or "").lower()
         return any(x in src for x in _CF_INDICATORS)
     except Exception:
         return False
-
 
 def is_turnstile_solved(sb) -> bool:
     try:
@@ -593,7 +557,6 @@ def is_turnstile_solved(sb) -> bool:
     except Exception:
         return False
 
-
 def _cf_wait_silent(sb, timeout: int = 30) -> bool:
     log("🔍 策略1: 静默等待 Cloudflare 自动通过...")
     start = time.time()
@@ -604,7 +567,6 @@ def _cf_wait_silent(sb, timeout: int = 30) -> bool:
         time.sleep(1)
     log("⚠️ 静默等待超时")
     return False
-
 
 def _cf_uc_gui_captcha(sb, max_attempts: int = 3) -> bool:
     log("🔍 策略2: SeleniumBase uc_gui_click_captcha...")
@@ -620,7 +582,6 @@ def _cf_uc_gui_captcha(sb, max_attempts: int = 3) -> bool:
             time.sleep(2)
     log("❌ uc_gui_click_captcha 策略失败")
     return False
-
 
 def _cf_xdotool_click(sb, max_attempts: int = 6) -> bool:
     log("🔍 策略3: xdotool 物理点击 Turnstile 复选框...")
@@ -651,7 +612,6 @@ def _cf_xdotool_click(sb, max_attempts: int = 6) -> bool:
     log("❌ xdotool 策略失败")
     return False
 
-
 def _cf_seleniumbase_click(sb, max_attempts: int = 5) -> bool:
     log("🔍 策略4: SeleniumBase 原生点击 iframe...")
     for attempt in range(max_attempts):
@@ -672,7 +632,6 @@ def _cf_seleniumbase_click(sb, max_attempts: int = 5) -> bool:
     log("❌ SeleniumBase 点击策略失败")
     return False
 
-
 def _cf_js_click_all(sb, max_attempts: int = 3) -> bool:
     log("🔍 策略5: JS 遍历点击所有可疑元素...")
     for attempt in range(max_attempts):
@@ -691,7 +650,6 @@ def _cf_js_click_all(sb, max_attempts: int = 3) -> bool:
     log("❌ JS 点击策略失败")
     return False
 
-
 def _cf_random_mouse(sb, duration: int = 10) -> bool:
     log("🔍 策略6: 随机鼠标移动模拟真人行为...")
     start = time.time()
@@ -706,7 +664,6 @@ def _cf_random_mouse(sb, duration: int = 10) -> bool:
         time.sleep(0.3)
     log("❌ 随机移动策略失败")
     return False
-
 
 def solve_cloudflare(sb) -> bool:
     """多策略逐一尝试通过 Cloudflare 验证"""
@@ -734,7 +691,6 @@ def solve_cloudflare(sb) -> bool:
     log("\n❌ 所有策略均未能通过 Cloudflare 验证")
     return False
 
-
 # ============================================================
 #  登录模块（Cookie / 账号密码 / Discord OAuth + Cookie 持久化）
 # ============================================================
@@ -746,10 +702,8 @@ LOGIN_METHOD_DISCORD  = "Discord OAuth"
 _current_login_method = LOGIN_METHOD_COOKIE
 STATE_RE = re.compile(r"[?&]state=([^&]+)")
 
-
 def get_login_method() -> str:
     return _current_login_method
-
 
 def get_cookie_value(sb, name: str):
     try:
@@ -763,7 +717,6 @@ def get_cookie_value(sb, name: str):
         pass
     return None, None
 
-
 def should_update_cookie(new_value, old_value, expiry_dt) -> bool:
     if new_value is None:
         return False
@@ -774,7 +727,6 @@ def should_update_cookie(new_value, old_value, expiry_dt) -> bool:
         if remaining < Config.COOKIE_UPDATE_THRESHOLD_DAYS * 24 * 3600:
             return True
     return False
-
 
 def update_github_secret(secret_name: str, new_value: str) -> bool:
     if not new_value:
@@ -797,7 +749,6 @@ def update_github_secret(secret_name: str, new_value: str) -> bool:
         log(f"❌ 异常: {e}")
         return False
 
-
 def save_cookie_to_github(sb) -> bool:
     if not Config.GH_TOKEN or not Config.GH_SECRET_NAME:
         log("ℹ️  未配置 GH_TOKEN 或 GH_SECRET_NAME，跳过自动更新 Cookie")
@@ -807,7 +758,6 @@ def save_cookie_to_github(sb) -> bool:
         return update_github_secret(Config.GH_SECRET_NAME, new_value)
     log("✅ Cookie 无需更新")
     return True
-
 
 def login_by_cookie(sb) -> bool:
     global _current_login_method
@@ -841,7 +791,6 @@ def login_by_cookie(sb) -> bool:
     except Exception as e:
         log(f"❌ Cookie 登录异常: {e}")
         return False
-
 
 def login_by_password(sb) -> bool:
     global _current_login_method
@@ -910,7 +859,6 @@ def login_by_password(sb) -> bool:
         sb.save_screenshot("login_error.png")
         return False
 
-
 def _capture_discord_state(sb) -> str:
     log("🔎 获取 Discord OAuth state...")
     discord_login_url = f"{Config.BASE_URL}{Config.DISCORD_LOGIN_PATH}"
@@ -927,7 +875,6 @@ def _capture_discord_state(sb) -> str:
     state = urllib.parse.unquote(m.group(1))
     log(f"✅ 已捕获 state")
     return state
-
 
 def _discord_authorize(state: str) -> str:
     query = urllib.parse.urlencode({
@@ -965,7 +912,6 @@ def _discord_authorize(state: str) -> str:
     except Exception as e:
         log(f"❌ Discord OAuth2 异常: {e}")
         return ""
-
 
 def login_by_discord(sb) -> bool:
     global _current_login_method
@@ -1005,7 +951,6 @@ def login_by_discord(sb) -> bool:
     sb.save_screenshot("login_timeout.png")
     return False
 
-
 def do_login(sb) -> bool:
     log("\n" + "#" * 25)
     log("  开始自动登录")
@@ -1023,7 +968,6 @@ def do_login(sb) -> bool:
         time.sleep(1)
     log("\n❌ 所有登录方式均失败")
     return False
-
 
 # ============================================================
 #  Telegram 通知
@@ -1046,7 +990,6 @@ def send_telegram_message(text: str) -> bool:
         log(f"⚠️  Telegram 发送异常: {e}")
         return False
 
-
 def build_notification(status: str, extra: str = "", error: str = "",
                        expiry_date: str = "", login_method: str = "") -> str:
     masked_email = mask_email(Config.EMAIL) if Config.EMAIL else "未填写"
@@ -1063,7 +1006,6 @@ def build_notification(status: str, extra: str = "", error: str = "",
     lines.append(f"⏱️  执行时间: {beijing_time_str()}")
     return "\n".join(lines)
 
-
 def notify_login_success(login_method: str = ""):
     send_telegram_message(build_notification("✅ 登录成功", login_method=login_method))
 
@@ -1079,32 +1021,300 @@ def notify_renew_failure(error: str = "未知错误", extra: str = ""):
 def notify_not_time(extra: str = "", expiry_date: str = ""):
     send_telegram_message(build_notification("⏳ 未到续期时间", extra=extra, expiry_date=expiry_date))
 
+# ============================================================
+#  IceHost 续期动作
+# ============================================================
 
-# ============================================================
-#  续期动作（占位 —— 在此添加具体平台逻辑）
-# ============================================================
+def _parse_expiry_date(date_str: str):
+    """解析到期时间字符串，返回 datetime 对象"""
+    date_str = date_str.strip()
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d", "%d.%m.%Y %H:%M:%S", "%d.%m.%Y"):
+        try:
+            return datetime.strptime(date_str, fmt)
+        except ValueError:
+            continue
+    return None
+
+def _find_server_cards(sb) -> list:
+    """通过 JS 查找页面上所有服务器卡片"""
+    js = """
+    (function(){
+        var cards = document.querySelectorAll('[draggable="true"]');
+        var results = [];
+        cards.forEach(function(card, idx){
+            var nameEl = card.querySelector('p');
+            var dateEl = card.querySelector('.sc-1ibsw91-1, [class*="cUvpcr"]');
+            var name = nameEl ? nameEl.textContent.trim() : '';
+            var expiry = dateEl ? dateEl.textContent.trim() : '';
+            var renewBtn = null;
+            var btns = card.querySelectorAll('button');
+            btns.forEach(function(b){
+                var txt = (b.textContent || '').toLowerCase();
+                if (txt.includes('przedłuż') || txt.includes('extend') || txt.includes('renew') || txt.includes('verlängern')) {
+                    renewBtn = b;
+                }
+            });
+            var suspended = false;
+            var spans = card.querySelectorAll('span');
+            spans.forEach(function(s){
+                var txt = (s.textContent || '').toLowerCase();
+                if (txt.includes('zawieszony') || txt.includes('suspended')) {
+                    suspended = true;
+                }
+            });
+            if (name) {
+                results.push({idx: idx, name: name, expiry: expiry, hasRenewBtn: !!renewBtn, suspended: suspended});
+            }
+        });
+        return results;
+    })()
+    """
+    try:
+        return sb.execute_script(js) or []
+    except Exception as e:
+        log(f"❌ 查找服务器卡片失败: {e}")
+        return []
+
+def _click_renew_button(sb, card_index: int) -> bool:
+    """点击指定卡片的续期按钮"""
+    js = f"""
+    (function(){{
+        var cards = document.querySelectorAll('[draggable="true"]');
+        var card = cards[{card_index}];
+        if (!card) return false;
+        var btns = card.querySelectorAll('button');
+        for (var i = 0; i < btns.length; i++) {{
+            var txt = (btns[i].textContent || '').toLowerCase();
+            if (txt.includes('przedłuż') || txt.includes('extend') || txt.includes('renew') || txt.includes('verlängern')) {{
+                btns[i].click();
+                return true;
+            }}
+        }}
+        return false;
+    }})()
+    """
+    try:
+        return sb.execute_script(js)
+    except Exception as e:
+        log(f"❌ 点击续期按钮失败: {e}")
+        return False
+
+def _click_confirm_button(sb, timeout: int = 10) -> bool:
+    """在弹出的确认窗口中点击确认按钮（波兰语/英语/德语）"""
+    start = time.time()
+    while time.time() - start < timeout:
+        js = """
+        (function(){
+            var btns = document.querySelectorAll('button, [role="button"], .sc-1qu1gou-2');
+            for (var i = btns.length - 1; i >= 0; i--) {
+                var txt = (btns[i].textContent || '').toLowerCase().trim();
+                if (txt.includes('tak, przedłuż serwer') ||
+                    txt.includes('yes, extend server') ||
+                    txt.includes('ja, verlängern') ||
+                    txt.includes('tak, przedłuż') ||
+                    txt.includes('yes, extend') ||
+                    (txt === 'przedłuż') ||
+                    (txt === 'extend')) {
+                    btns[i].click();
+                    return true;
+                }
+            }
+            return false;
+        })()
+        """
+        try:
+            if sb.execute_script(js):
+                log("✅ 已点击确认续期按钮")
+                return True
+        except Exception:
+            pass
+        time.sleep(0.5)
+    log("❌ 未找到确认按钮")
+    return False
+
+def _navigate_to_servers(sb) -> bool:
+    """导航到服务器列表页面"""
+    log("🌐 导航到服务器列表页面...")
+
+    # 方式1：点击侧边栏 Server/Serwery 链接
+    js_click_sidebar = """
+    (function(){
+        var links = document.querySelectorAll('a.sidebar-link, a[href="/"], nav a, aside a');
+        for (var i = 0; i < links.length; i++) {
+            var txt = (links[i].textContent || '').toLowerCase().trim();
+            if (txt.includes('serwer') || txt.includes('server') || txt.includes('serwery') ||
+                txt.includes('servers') || txt.includes('moje')) {
+                links[i].click();
+                return true;
+            }
+        }
+        return false;
+    })()
+    """
+    try:
+        if sb.execute_script(js_click_sidebar):
+            log("✅ 已点击侧边栏服务器链接")
+            time.sleep(3)
+            sb.wait_for_ready_state_complete()
+            return True
+    except Exception:
+        pass
+
+    # 方式2：直接访问 BASE_URL 根路径
+    log("⚠️  侧边栏点击失败，尝试直接访问根路径...")
+    try:
+        sb.open(Config.BASE_URL)
+        sb.wait_for_ready_state_complete()
+        time.sleep(3)
+        return True
+    except Exception as e:
+        log(f"❌ 导航失败: {e}")
+        return False
 
 def do_renew(sb) -> tuple:
     """
+    IceHost 服务器续期逻辑
     返回: (status, extra_info, expiry_date)
         status: "SUCCESS" | "NOT_TIME" | "FAIL"
     """
     log("\n" + "#" * 25)
-    log("  开始执行续期动作")
+    log("  开始执行 IceHost 续期动作")
     log("#" * 25)
 
-    # ============================================================
-    #  TODO: 在此处添加具体平台的续期逻辑
-    #  示例流程：
-    #    1. 定位续期按钮并点击
-    #    2. 处理可能出现的人机验证（调用 solve_cloudflare(sb)）
-    #    3. 确认续期提交
-    #    4. 读取结果并返回状态
-    # ============================================================
+    # 步骤1：导航到服务器页面
+    if not _navigate_to_servers(sb):
+        return "FAIL", "无法导航到服务器页面", ""
 
-    log("⚠️  续期动作尚未实现，请在 do_renew() 中添加具体平台逻辑")
-    return "FAIL", "续期逻辑未实现", ""
+    # 处理可能的 Cloudflare 验证
+    if is_cloudflare_present(sb):
+        log("🔒 服务器页面遇到 Cloudflare...")
+        if not solve_cloudflare(sb):
+            return "FAIL", "Cloudflare 验证未通过", ""
+        time.sleep(2)
 
+    # 步骤2：查找所有服务器卡片
+    time.sleep(2)
+    cards = _find_server_cards(sb)
+    if not cards:
+        log("❌ 未找到任何服务器卡片")
+        sb.save_screenshot("no_servers.png")
+        return "FAIL", "未找到服务器卡片", ""
+
+    log(f"📋 找到 {len(cards)} 个服务器:")
+    for c in cards:
+        status_str = "（已暂停）" if c.get("suspended") else ""
+        log(f"  [{c['idx']}] {c['name']} | 到期: {c['expiry']} | 续期按钮: {'有' if c.get('hasRenewBtn') else '无'} {status_str}")
+
+    # 步骤3：遍历每个服务器，直接续期
+    renewed_count = 0
+    skipped_count = 0
+    failed_count = 0
+    latest_expiry = ""
+    results = []
+
+    for card in cards:
+        server_name = card["name"]
+        expiry_str = card["expiry"]
+        card_idx = card["idx"]
+
+        if card.get("suspended"):
+            log(f"\n⚠️  [{server_name}] 服务器已暂停，跳过")
+            results.append(f"⚠️  {server_name}: 已暂停")
+            skipped_count += 1
+            continue
+
+        log(f"\n📅 [{server_name}] 当前到期时间: {expiry_str}")
+        old_expiry = expiry_str
+
+        # 直接点击续期按钮，不判断到期时间
+        log(f"🔄 [{server_name}] 开始续期...")
+
+        if not _click_renew_button(sb, card_idx):
+            log(f"❌ [{server_name}] 未找到续期按钮")
+            results.append(f"❌ {server_name}: 未找到续期按钮")
+            failed_count += 1
+            continue
+
+        log("⏳ 等待确认弹窗...")
+        time.sleep(2)
+
+        # 步骤4：点击确认按钮
+        if not _click_confirm_button(sb, timeout=10):
+            log(f"❌ [{server_name}] 未找到确认按钮")
+            results.append(f"❌ {server_name}: 确认按钮未找到")
+            sb.save_screenshot(f"confirm_fail_{card_idx}.png")
+            failed_count += 1
+            continue
+
+        # 步骤5：等待续期完成
+        log("⏳ 等待续期处理...")
+        time.sleep(5)
+
+        # 处理可能的 Cloudflare
+        if is_cloudflare_present(sb):
+            solve_cloudflare(sb)
+            time.sleep(2)
+
+        # 步骤6：刷新页面，重新读取到期时间
+        log("🔄 刷新页面验证续期结果...")
+        sb.refresh()
+        sb.wait_for_ready_state_complete()
+        time.sleep(3)
+
+        if is_cloudflare_present(sb):
+            solve_cloudflare(sb)
+            time.sleep(2)
+
+        # 重新查找服务器卡片
+        new_cards = _find_server_cards(sb)
+        new_expiry_str = ""
+        for nc in new_cards:
+            if nc["name"] == server_name:
+                new_expiry_str = nc["expiry"]
+                break
+
+        if not new_expiry_str:
+            log(f"⚠️  [{server_name}] 刷新后未找到服务器，尝试重新导航...")
+            _navigate_to_servers(sb)
+            time.sleep(3)
+            new_cards = _find_server_cards(sb)
+            for nc in new_cards:
+                if nc["name"] == server_name:
+                    new_expiry_str = nc["expiry"]
+                    break
+
+        if new_expiry_str and new_expiry_str != old_expiry:
+            new_dt = _parse_expiry_date(new_expiry_str)
+            new_days = (new_dt - datetime.now()).total_seconds() / 86400 if new_dt else 0
+            log(f"✅ [{server_name}] 续期成功！")
+            log(f"   旧到期: {old_expiry}")
+            log(f"   新到期: {new_expiry_str}（剩余 {new_days:.1f} 天）")
+            results.append(f"✅ {server_name}: {old_expiry} → {new_expiry_str}")
+            renewed_count += 1
+            if not latest_expiry or new_expiry_str > latest_expiry:
+                latest_expiry = new_expiry_str
+        else:
+            log(f"⚠️  [{server_name}] 到期时间未变化，续期可能失败")
+            results.append(f"⚠️  {server_name}: 到期时间未变化（{old_expiry}）")
+            failed_count += 1
+            if not latest_expiry or expiry_str > latest_expiry:
+                latest_expiry = expiry_str
+
+    # 步骤7：汇总结果
+    log("\n" + "=" * 40)
+    log("  续期汇总")
+    log("=" * 40)
+    log(f"  总计: {len(cards)} | 成功: {renewed_count} | 跳过: {skipped_count} | 失败: {failed_count}")
+    for r in results:
+        log(f"  {r}")
+
+    extra_info = "\n".join(results)
+    if failed_count > 0 and renewed_count == 0:
+        return "FAIL", extra_info, latest_expiry
+    elif renewed_count > 0:
+        return "SUCCESS", extra_info, latest_expiry
+    else:
+        return "NOT_TIME", extra_info, latest_expiry
 
 # ============================================================
 #  清理模块
@@ -1130,7 +1340,6 @@ def cleanup():
     except Exception:
         pass
     log("✅ 清理完成\n")
-
 
 # ============================================================
 #  主流程
@@ -1212,7 +1421,6 @@ def main():
         if proxy_started:
             stop_singbox()
         cleanup()
-
 
 if __name__ == "__main__":
     main()

@@ -2,6 +2,9 @@ name: IceHost Hourly KeepAlive
 
 on:
   workflow_dispatch: # 由外部定时（如 cron-job.org）进行每小时触发
+  # 如果需要内部定时，可添加 schedule:
+  # schedule:
+  #   - cron: '0 * * * *'   # 每小时整点触发
 
 jobs:
   check-and-start:
@@ -17,13 +20,12 @@ jobs:
 
       - name: Install dependencies
         run: |
-          # 核心改变：安装 seleniumbase 代替 playwright
           pip install seleniumbase requests
 
       - name: Set up WARP
         uses: fscarmen/warp-on-actions@v1.1
 
-      - name: Run check script
+      - name: Run IceHost check script
         env:
           ICEHOST_SERVER_URL: ${{ secrets.ICEHOST_SERVER_URL }}
           ICEHOST_COOKIES: ${{ secrets.ICEHOST_COOKIES }}
@@ -38,3 +40,19 @@ jobs:
           name: icehost-debug-screenshot
           path: icehost_debug_screenshot.png
           if-no-files-found: ignore
+
+      # ========== 新增：自动更新 Cookie Secret ==========
+      - name: Update ICEHOST_COOKIES secret
+        if: always()   # 无论续期成功还是失败，都尝试更新（Cookie可能已变化）
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}   # 需要具有 repo 写入权限的 PAT
+        run: |
+          # 检查导出的 Cookie 文件是否存在
+          if [ -f icehost_exported_cookies.json ]; then
+            echo "正在更新 ICEHOST_COOKIES Secret..."
+            # 将 JSON 文件内容作为新值设置到 Secret
+            gh secret set ICEHOST_COOKIES < icehost_exported_cookies.json
+            echo "Secret 更新成功！"
+          else
+            echo "未找到 icehost_exported_cookies.json，跳过更新。"
+          fi

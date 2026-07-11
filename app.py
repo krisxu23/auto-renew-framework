@@ -38,7 +38,7 @@ def beijing_time_str() -> str:
 class Config:
     # 目标站点
     BASE_URL        = os.environ.get("BASE_URL", "")
-    LOGIN_PATH      = os.environ.get("LOGIN_PATH", "").strip() or "/auth/login"
+    LOGIN_PATH      = os.environ.get("LOGIN_PATH", "").strip() or "/login"
     DASHBOARD_PATH  = os.environ.get("DASHBOARD_PATH", "").strip() or "/"
 
     # 账号密码登录
@@ -893,7 +893,7 @@ def login_by_password(sb) -> bool:
                     for (var i = 0; i < btns.length; i++) {
                         var txt = (btns[i].textContent || '').toLowerCase();
                         if (txt.includes('zaloguj') || txt.includes('login') || txt.includes('sign in') ||
-                            txt.includes('log in') || txt.includes('submit') || txt.includes('zaloguj się')) {
+                            txt.includes('log in') || txt.includes('submit')) {
                             btns[i].click();
                             return true;
                         }
@@ -1088,11 +1088,7 @@ def build_notification(status: str, extra: str = "", error: str = "",
 
 def notify_final(status: str, extra: str = "", error: str = "",
                  expiry_date: str = "", login_method: str = ""):
-    """只发送一条最终汇总通知"""
     send_telegram_message(build_notification(status, extra, error, expiry_date, login_method))
-
-def notify_login_failure(error: str = "未知错误"):
-    send_telegram_message(build_notification("❌ 登录失败", error=error))
 
 # ============================================================
 #  IceHost 续期动作
@@ -1107,72 +1103,46 @@ def _parse_expiry_date(date_str: str):
             continue
     return None
 
-def _find_server_cards(sb) -> list:
-    """通过 JS 查找页面上所有服务器卡片，多种选择器尝试"""
+def _find_renew_buttons(sb) -> list:
+    """直接在整页面查找所有续期按钮（波兰语/英语）"""
     js = """
     (function(){
-        // 方式1: draggable="true" 元素
-        var cards = document.querySelectorAll('[draggable="true"]');
-        // 方式2: 带 fa-server 图标的容器
-        if (cards.length === 0) {
-            cards = document.querySelectorAll('[class*="sc-1ibsw91"]');
-        }
-        // 方式3: 带 "Przedłuż" 或 "Extend" 按钮的容器
-        if (cards.length === 0) {
-            var allBtns = document.querySelectorAll('button');
-            var cardSet = new Set();
-            allBtns.forEach(function(b){
-                var txt = (b.textContent || '').toLowerCase();
-                if (txt.includes('przedłuż') || txt.includes('extend') || txt.includes('renew')) {
-                    var p = b;
-                    for (var i = 0; i < 10; i++) {
-                        p = p.parentElement;
-                        if (!p) break;
-                        if (p.querySelector('p') && p.querySelectorAll('button').length > 0) {
-                            cardSet.add(p);
-                            break;
-                        }
-                    }
-                }
-            });
-            cards = Array.from(cardSet);
-        }
         var results = [];
-        cards.forEach(function(card, idx){
-            var nameEl = card.querySelector('p');
-            // 多种方式找日期
-            var dateEl = card.querySelector('.sc-1ibsw91-1, [class*="cUvpcr"]');
-            if (!dateEl) {
-                // 尝试找所有包含日期格式的文本
-                var allText = card.querySelectorAll('p, span, div');
-                for (var t = 0; t < allText.length; t++) {
-                    var txt = (allText[t].textContent || '').trim();
-                    if (/\\d{4}-\\d{2}-\\d{2}/.test(txt) || /\\d{2}\\.\\d{2}\\.\\d{4}/.test(txt)) {
-                        dateEl = allText[t];
-                        break;
+        var spans = document.querySelectorAll('span.sc-1qu1gou-2, span');
+        spans.forEach(function(span, idx){
+            var txt = (span.textContent || '').trim().toLowerCase();
+            if (txt === 'przedłuż serwer' || txt === 'extend server' ||
+                txt === 'przedłuż' || txt === 'extend') {
+                var btn = span.closest('button');
+                if (btn) {
+                    var card = btn.closest('[draggable="true"], [class*="sc-1ibsw91"]');
+                    var serverName = '';
+                    var expiry = '';
+                    if (card) {
+                        var p = card.querySelector('p');
+                        if (p) serverName = p.textContent.trim();
+                        var dateEls = card.querySelectorAll('p, span, div');
+                        for (var i = 0; i < dateEls.length; i++) {
+                            var t = (dateEls[i].textContent || '').trim();
+                            if (/\\d{4}-\\d{2}-\\d{2}/.test(t)) {
+                                expiry = t;
+                                break;
+                            }
+                        }
+                        var suspended = false;
+                        var spans2 = card.querySelectorAll('span');
+                        spans2.forEach(function(s){
+                            var st = (s.textContent || '').toLowerCase();
+                            if (st.includes('zawieszony') || st.includes('suspended'))
+                                suspended = true;
+                        });
+                        results.push({idx: results.length, btnText: txt, serverName: serverName,
+                                       expiry: expiry, suspended: suspended});
+                    } else {
+                        results.push({idx: results.length, btnText: txt, serverName: '',
+                                       expiry: '', suspended: false});
                     }
                 }
-            }
-            var name = nameEl ? nameEl.textContent.trim() : '';
-            var expiry = dateEl ? dateEl.textContent.trim() : '';
-            var renewBtn = null;
-            var btns = card.querySelectorAll('button');
-            btns.forEach(function(b){
-                var txt = (b.textContent || '').toLowerCase();
-                if (txt.includes('przedłuż') || txt.includes('extend') || txt.includes('renew') || txt.includes('verlängern')) {
-                    renewBtn = b;
-                }
-            });
-            var suspended = false;
-            var spans = card.querySelectorAll('span');
-            spans.forEach(function(s){
-                var txt = (s.textContent || '').toLowerCase();
-                if (txt.includes('zawieszony') || txt.includes('suspended')) {
-                    suspended = true;
-                }
-            });
-            if (name) {
-                results.push({idx: idx, name: name, expiry: expiry, hasRenewBtn: !!renewBtn, suspended: suspended});
             }
         });
         return results;
@@ -1181,103 +1151,39 @@ def _find_server_cards(sb) -> list:
     try:
         return sb.execute_script(js) or []
     except Exception as e:
-        log(f"❌ 查找服务器卡片失败: {e}")
+        log(f"❌ 查找续期按钮失败: {e}")
         return []
 
-def _click_renew_button(sb, card_index: int) -> bool:
-    js = f"""
-    (function(){{
-        var cards = document.querySelectorAll('[draggable="true"]');
-        if (cards.length === 0) cards = document.querySelectorAll('[class*="sc-1ibsw91"]');
-        var card = cards[{card_index}];
-        if (!card) return false;
-        var btns = card.querySelectorAll('button');
-        for (var i = 0; i < btns.length; i++) {{
-            var txt = (btns[i].textContent || '').toLowerCase();
-            if (txt.includes('przedłuż') || txt.includes('extend') || txt.includes('renew') || txt.includes('verlängern')) {{
-                btns[i].click();
-                return true;
-            }}
-        }}
-        return false;
-    }})()
-    """
-    try:
-        return sb.execute_script(js)
-    except Exception as e:
-        log(f"❌ 点击续期按钮失败: {e}")
-        return False
-
-def _click_confirm_button(sb, timeout: int = 10) -> bool:
+def _click_button_by_text(sb, texts: list, timeout: int = 10) -> bool:
+    """在整页面查找并点击匹配文本的按钮"""
     start = time.time()
     while time.time() - start < timeout:
         js = """
         (function(){
-            var btns = document.querySelectorAll('button, [role="button"], .sc-1qu1gou-2');
-            for (var i = btns.length - 1; i >= 0; i--) {
-                var txt = (btns[i].textContent || '').toLowerCase().trim();
-                if (txt.includes('tak, przedłuż serwer') ||
-                    txt.includes('yes, extend server') ||
-                    txt.includes('ja, verlängern') ||
-                    txt.includes('tak, przedłuż') ||
-                    txt.includes('yes, extend') ||
-                    (txt === 'przedłuż') ||
-                    (txt === 'extend')) {
-                    btns[i].click();
-                    return true;
+            var texts = """ + json.dumps([t.lower() for t in texts]) + """;
+            var spans = document.querySelectorAll('span.sc-1qu1gou-2, span');
+            for (var i = 0; i < spans.length; i++) {
+                var txt = (spans[i].textContent || '').trim().toLowerCase();
+                for (var j = 0; j < texts.length; j++) {
+                    if (txt === texts[j] || txt.includes(texts[j])) {
+                        var btn = spans[i].closest('button') || spans[i];
+                        btn.click();
+                        return txt;
+                    }
                 }
             }
-            return false;
+            return null;
         })()
         """
         try:
-            if sb.execute_script(js):
-                log("✅ 已点击确认续期按钮")
+            result = sb.execute_script(js)
+            if result:
+                log(f"✅ 已点击按钮: {result}")
                 return True
         except Exception:
             pass
         time.sleep(0.5)
-    log("❌ 未找到确认按钮")
     return False
-
-def _navigate_to_servers(sb) -> bool:
-    """导航到服务器列表页面"""
-    log("🌐 导航到服务器列表页面...")
-
-    # 方式1：点击侧边栏 Server/Serwery 链接
-    js_click_sidebar = """
-    (function(){
-        var links = document.querySelectorAll('a.sidebar-link, a[href="/"], nav a, aside a, a');
-        for (var i = 0; i < links.length; i++) {
-            var txt = (links[i].textContent || '').toLowerCase().trim();
-            if (txt.includes('serwer') || txt.includes('server') || txt.includes('serwery') ||
-                txt.includes('servers') || txt.includes('moje')) {
-                links[i].click();
-                return true;
-            }
-        }
-        return false;
-    })()
-    """
-    try:
-        if sb.execute_script(js_click_sidebar):
-            log("✅ 已点击侧边栏服务器链接")
-            time.sleep(3)
-            sb.wait_for_ready_state_complete()
-            return True
-    except Exception:
-        pass
-
-    # 方式2：直接访问 BASE_URL 根路径
-    log("⚠️  侧边栏点击失败，尝试直接访问根路径...")
-    try:
-        sb.open(Config.BASE_URL)
-        sb.wait_for_ready_state_complete()
-        time.sleep(3)
-        return True
-    except Exception as e:
-        log(f"❌ 导航失败: {e}")
-        return False
 
 def do_renew(sb) -> tuple:
     """
@@ -1289,26 +1195,54 @@ def do_renew(sb) -> tuple:
     log("  开始执行 IceHost 续期动作")
     log("#" * 25)
 
-    # 步骤1：导航到服务器页面
-    if not _navigate_to_servers(sb):
-        return "FAIL", "无法导航到服务器页面", ""
+    # 步骤1：确保在服务器页面（登录后应该已自动跳转到根路径）
+    current_url = sb.get_current_url()
+    log(f"📝 当前页面: {current_url}")
 
-    # 处理可能的 Cloudflare 验证
+    # 检查是否被网站封锁
+    try:
+        page_title = sb.execute_script("return document.title")
+        log(f"📝 页面标题: {page_title}")
+        if "block" in page_title.lower():
+            log("🚫 网站封锁了当前 IP！页面标题含 'Block'")
+            log("💡 解决方案：配置 NODE_LINK 使用代理节点")
+            sb.save_screenshot("ip_blocked.png")
+            return "FAIL", "网站封锁了当前 IP，需要配置代理", ""
+    except Exception:
+        pass
+
+    # 如果不在根路径，导航到根路径
+    if Config.BASE_URL not in current_url or "/login" in current_url.lower():
+        log("🌐 导航到服务器页面...")
+        sb.open(Config.BASE_URL)
+        sb.wait_for_ready_state_complete()
+        time.sleep(5)
+
+    # 处理 Cloudflare
     if is_cloudflare_present(sb):
         log("🔒 服务器页面遇到 Cloudflare...")
         if not solve_cloudflare(sb):
             return "FAIL", "Cloudflare 验证未通过", ""
         time.sleep(2)
 
-    # 步骤2：查找所有服务器卡片（带重试，React SPA 需要时间渲染）
-    cards = []
+    # 再次检查是否被封锁
+    try:
+        page_title = sb.execute_script("return document.title")
+        if "block" in page_title.lower():
+            log("🚫 网站封锁了当前 IP！")
+            sb.save_screenshot("ip_blocked.png")
+            return "FAIL", "网站封锁了当前 IP，需要配置代理", ""
+    except Exception:
+        pass
+
+    # 步骤2：查找续期按钮（带重试）
+    buttons = []
     for retry in range(5):
         time.sleep(3)
-        cards = _find_server_cards(sb)
-        if cards:
+        buttons = _find_renew_buttons(sb)
+        if buttons:
             break
-        log(f"⏳ 第 {retry + 1} 次未找到服务器卡片，等待页面加载...")
-        # 每次重试前刷新一次
+        log(f"⏳ 第 {retry + 1} 次未找到续期按钮，等待页面加载...")
         if retry == 2:
             log("🔄 刷新页面重试...")
             sb.refresh()
@@ -1318,84 +1252,68 @@ def do_renew(sb) -> tuple:
                 solve_cloudflare(sb)
                 time.sleep(2)
 
-    if not cards:
-        log("❌ 重试5次后仍未找到任何服务器卡片")
-        sb.save_screenshot("no_servers.png")
-        # 打印页面信息用于调试
+    if not buttons:
+        log("❌ 重试5次后仍未找到任何续期按钮")
+        sb.save_screenshot("no_buttons.png")
         try:
-            page_url = sb.get_current_url()
-            log(f"📝 当前页面URL: {page_url}")
-            page_title = sb.execute_script("return document.title")
-            log(f"📝 页面标题: {page_title}")
-            # 打印页面上所有按钮文本
             btn_texts = sb.execute_script("""
                 return Array.from(document.querySelectorAll('button')).map(function(b){
                     return b.textContent.trim();
                 }).filter(function(t){return t;});
             """)
             log(f"📝 页面按钮: {btn_texts}")
-            # 打印页面上所有链接文本
-            link_texts = sb.execute_script("""
-                return Array.from(document.querySelectorAll('a')).map(function(a){
-                    return a.textContent.trim() + ' -> ' + a.href;
-                }).filter(function(t){return t;});
-            """)
-            log(f"📝 页面链接: {link_texts}")
-        except Exception as e:
-            log(f"❌ 调试信息获取失败: {e}")
-        return "FAIL", "未找到服务器卡片", ""
+        except Exception:
+            pass
+        return "FAIL", "未找到续期按钮", ""
 
-    log(f"📋 找到 {len(cards)} 个服务器:")
-    for c in cards:
-        status_str = "（已暂停）" if c.get("suspended") else ""
-        log(f"  [{c['idx']}] {c['name']} | 到期: {c['expiry']} | 续期按钮: {'有' if c.get('hasRenewBtn') else '无'} {status_str}")
+    log(f"📋 找到 {len(buttons)} 个续期按钮:")
+    for b in buttons:
+        status_str = "（已暂停）" if b.get("suspended") else ""
+        log(f"  [{b['idx']}] 服务器: {b.get('serverName', '?')} | 到期: {b.get('expiry', '?')} | 按钮: {b['btnText']} {status_str}")
 
-    # 步骤3：遍历每个服务器，直接续期
+    # 步骤3：逐一点击续期
     renewed_count = 0
     skipped_count = 0
     failed_count = 0
     latest_expiry = ""
     results = []
 
-    for card in cards:
-        server_name = card["name"]
-        expiry_str = card["expiry"]
-        card_idx = card["idx"]
+    for btn_info in buttons:
+        server_name = btn_info.get("serverName", f"Server-{btn_info['idx']}")
+        expiry_str = btn_info.get("expiry", "")
+        old_expiry = expiry_str
 
-        if card.get("suspended"):
+        if btn_info.get("suspended"):
             log(f"\n⚠️  [{server_name}] 服务器已暂停，跳过")
             results.append(f"⚠️  {server_name}: 已暂停")
             skipped_count += 1
             continue
 
-        log(f"\n📅 [{server_name}] 当前到期时间: {expiry_str}")
-        old_expiry = expiry_str
+        log(f"\n🔄 [{server_name}] 开始续期...")
 
-        log(f"🔄 [{server_name}] 开始续期...")
-
-        if not _click_renew_button(sb, card_idx):
-            log(f"❌ [{server_name}] 未找到续期按钮")
-            results.append(f"❌ {server_name}: 未找到续期按钮")
+        # 点击续期按钮
+        if not _click_button_by_text(sb, ["Przedłuż serwer", "Extend Server", "Przedłuż", "Extend"], timeout=5):
+            log(f"❌ [{server_name}] 无法点击续期按钮")
+            results.append(f"❌ {server_name}: 无法点击续期按钮")
             failed_count += 1
             continue
 
         log("⏳ 等待确认弹窗...")
         time.sleep(2)
 
-        if not _click_confirm_button(sb, timeout=10):
+        # 点击确认按钮（波兰语/英语）
+        if not _click_button_by_text(sb, ["Tak, przedłuż serwer", "Yes, extend the server",
+                                           "Tak, przedłuż", "Yes, extend"], timeout=10):
             log(f"❌ [{server_name}] 未找到确认按钮")
             results.append(f"❌ {server_name}: 确认按钮未找到")
-            sb.save_screenshot(f"confirm_fail_{card_idx}.png")
+            sb.save_screenshot(f"confirm_fail_{btn_info['idx']}.png")
             failed_count += 1
             continue
 
         log("⏳ 等待续期处理...")
         time.sleep(5)
 
-        if is_cloudflare_present(sb):
-            solve_cloudflare(sb)
-            time.sleep(2)
-
+        # 刷新页面验证
         log("🔄 刷新页面验证续期结果...")
         sb.refresh()
         sb.wait_for_ready_state_complete()
@@ -1405,22 +1323,13 @@ def do_renew(sb) -> tuple:
             solve_cloudflare(sb)
             time.sleep(2)
 
-        new_cards = _find_server_cards(sb)
+        # 重新查找按钮，对比到期时间
+        new_buttons = _find_renew_buttons(sb)
         new_expiry_str = ""
-        for nc in new_cards:
-            if nc["name"] == server_name:
-                new_expiry_str = nc["expiry"]
+        for nb in new_buttons:
+            if nb.get("serverName") == server_name:
+                new_expiry_str = nb.get("expiry", "")
                 break
-
-        if not new_expiry_str:
-            log(f"⚠️  [{server_name}] 刷新后未找到服务器，尝试重新导航...")
-            _navigate_to_servers(sb)
-            time.sleep(5)
-            new_cards = _find_server_cards(sb)
-            for nc in new_cards:
-                if nc["name"] == server_name:
-                    new_expiry_str = nc["expiry"]
-                    break
 
         if new_expiry_str and new_expiry_str != old_expiry:
             new_dt = _parse_expiry_date(new_expiry_str)
@@ -1439,11 +1348,11 @@ def do_renew(sb) -> tuple:
             if not latest_expiry or expiry_str > latest_expiry:
                 latest_expiry = expiry_str
 
-    # 步骤7：汇总结果
+    # 汇总
     log("\n" + "=" * 40)
     log("  续期汇总")
     log("=" * 40)
-    log(f"  总计: {len(cards)} | 成功: {renewed_count} | 跳过: {skipped_count} | 失败: {failed_count}")
+    log(f"  总计: {len(buttons)} | 成功: {renewed_count} | 跳过: {skipped_count} | 失败: {failed_count}")
     for r in results:
         log(f"  {r}")
 
@@ -1518,7 +1427,7 @@ def main():
 
         with SB(**sb_kwargs) as sb:
             if not do_login(sb):
-                notify_login_failure("所有登录方式均失败")
+                notify_final("❌ 登录失败", error="所有登录方式均失败")
                 sys.exit(1)
 
             login_method = get_login_method()
@@ -1526,16 +1435,15 @@ def main():
 
             status, extra_info, expiry_date = do_renew(sb)
 
-            # 只在最后发送一条汇总通知
             if status == "SUCCESS":
                 log("🎉 续期成功！")
-                notify_final(f"✅ 续期成功", extra=extra_info, expiry_date=expiry_date, login_method=login_method)
+                notify_final("✅ 续期成功", extra=extra_info, expiry_date=expiry_date, login_method=login_method)
             elif status == "NOT_TIME":
-                log("⏳ 未到续期时间")
-                notify_final(f"⏳ 无需续期", extra=extra_info, expiry_date=expiry_date, login_method=login_method)
+                log("⏳ 无需续期")
+                notify_final("⏳ 无需续期", extra=extra_info, expiry_date=expiry_date, login_method=login_method)
             else:
                 log("❌ 续期失败")
-                notify_final(f"❌ 续期失败", extra=extra_info, login_method=login_method)
+                notify_final("❌ 续期失败", extra=extra_info, login_method=login_method)
 
             if Config.GH_TOKEN and Config.COOKIE_NAME:
                 log("\n🔄 检查并更新 Cookie...")
@@ -1552,7 +1460,7 @@ def main():
         import traceback
         traceback.print_exc()
         try:
-            notify_final(f"❌ 脚本异常", error=str(e))
+            notify_final("❌ 脚本异常", error=str(e))
         except Exception:
             pass
         sys.exit(1)

@@ -10,27 +10,34 @@ SERVER_URL = os.getenv("ICEHOST_SERVER_URL")
 ICEHOST_COOKIES = os.getenv("ICEHOST_COOKIES")
 
 def send_tg_notification(message, photo_path=None):
+    """发送合并后的通知：如果有截图，则作为单张图片消息（文本作为caption），否则仅发文本"""
     token = os.getenv("TG_BOT_TOKEN")
     chat_id = os.getenv("TG_CHAT_ID")
     if not token or not chat_id:
         print("未配置 TG 机器人变量，跳过发送 TG 推送。")
         return
-    try:
-        url = f"https://api.telegram.org/bot{token}/sendMessage"
-        requests.post(url, json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"})
-        print("TG 状态通知发送成功。")
-    except Exception as e:
-        print(f"发送 TG 消息异常: {e}")
+
+    # 如果有截图，优先发送带 caption 的图片
     if photo_path and os.path.exists(photo_path):
         try:
             url = f"https://api.telegram.org/bot{token}/sendPhoto"
             with open(photo_path, "rb") as f:
                 files = {"photo": f}
-                data = {"chat_id": chat_id, "caption": "IceHost 实时画面"}
+                data = {"chat_id": chat_id, "caption": message, "parse_mode": "HTML"}
                 requests.post(url, data=data, files=files)
-            print("TG 截图发送成功。")
+            print("TG 合并消息（截图+文字）发送成功。")
+            return  # 发送成功后直接返回，不再发送纯文本
         except Exception as e:
-            print(f"发送 TG 截图异常: {e}")
+            print(f"发送 TG 截图失败，尝试回退为纯文本消息: {e}")
+            # 若图片发送失败，继续执行下面的纯文本发送
+
+    # 如果没有截图或截图发送失败，发送纯文本消息
+    try:
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        requests.post(url, json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"})
+        print("TG 文本消息发送成功。")
+    except Exception as e:
+        print(f"发送 TG 消息异常: {e}")
 
 def get_expiration_time(sb):
     try:
@@ -135,12 +142,11 @@ def run():
             "You can't extend", "you have recently done", "next 6 hours"
         ]
 
-        # 先检查页面是否已有限制提示（点击前）
+        # 先检查页面是否已有限制提示
         page_source = sb.get_page_source()
         if any(kw in page_source for kw in keywords):
             print("检测到限制提示（点击前），未到续期时间，退出。")
             msg = "⛔ <b>IceHost 续期未执行</b>\n当前服务器未到可续期时间（限制提示已存在）。"
-            # 获取当前时间以便显示
             now_time = get_expiration_time(sb)
             if now_time:
                 msg += f"\n当前到期时间: {now_time.strftime('%Y-%m-%d %H:%M:%S')}"
@@ -182,9 +188,7 @@ def run():
             current_source = sb.get_page_source()
             if any(kw in current_source for kw in keywords):
                 print("点击后出现限制提示，续期未成功。")
-                # 发送失败通知
                 msg = "❌ <b>IceHost 续期失败</b>\n点击续期按钮后，页面提示未到可续期时间。"
-                # 获取当前时间（可能未变）
                 now_time = get_expiration_time(sb)
                 if now_time:
                     msg += f"\n当前到期时间: {now_time.strftime('%Y-%m-%d %H:%M:%S')}"
@@ -214,7 +218,6 @@ def run():
                         print(msg)
                         send_tg_notification(msg, "icehost_debug_final.png")
                 else:
-                    # 旧时间获取失败或时间未变化
                     msg = f"ℹ️ <b>IceHost 续期结果不明</b>\n无法确定时间是否增加。\n当前到期时间: {new_time.strftime('%Y-%m-%d %H:%M:%S')}"
                     print(msg)
                     send_tg_notification(msg, "icehost_debug_final.png")

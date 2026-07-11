@@ -146,11 +146,6 @@ def run():
         page_source = sb.get_page_source()
         if any(kw in page_source for kw in keywords):
             print("检测到限制提示（点击前），未到续期时间，退出。")
-            msg = "⛔ <b>IceHost 续期未执行</b>\n当前服务器未到可续期时间（限制提示已存在）。"
-            now_time = get_expiration_time(sb)
-            if now_time:
-                msg += f"\n当前到期时间: {now_time.strftime('%Y-%m-%d %H:%M:%S')}"
-            send_tg_notification(msg, "icehost_debug_after_captcha.png")
             export = export_cookies(sb)
             with open("icehost_exported_cookies.json", "w") as f:
                 json.dump(export, f, indent=2)
@@ -187,12 +182,7 @@ def run():
             # 点击后检查是否出现限制提示
             current_source = sb.get_page_source()
             if any(kw in current_source for kw in keywords):
-                print("点击后出现限制提示，续期未成功。")
-                msg = "❌ <b>IceHost 续期失败</b>\n点击续期按钮后，页面提示未到可续期时间。"
-                now_time = get_expiration_time(sb)
-                if now_time:
-                    msg += f"\n当前到期时间: {now_time.strftime('%Y-%m-%d %H:%M:%S')}"
-                send_tg_notification(msg, "icehost_debug_after_click.png")
+                print("点击后出现限制提示，续期未成功（未到时间）。")
                 export = export_cookies(sb)
                 with open("icehost_exported_cookies.json", "w") as f:
                     json.dump(export, f, indent=2)

@@ -38,17 +38,17 @@ def beijing_time_str() -> str:
 class Config:
     # 目标站点
     BASE_URL        = os.environ.get("BASE_URL", "")
-    LOGIN_PATH      = os.environ.get("LOGIN_PATH", "/auth/login")
-    DASHBOARD_PATH  = os.environ.get("DASHBOARD_PATH", "/dashboard")
+    LOGIN_PATH      = os.environ.get("LOGIN_PATH", "").strip() or "/auth/login"
+    DASHBOARD_PATH  = os.environ.get("DASHBOARD_PATH", "").strip() or "/"
 
     # 账号密码登录
     EMAIL    = os.environ.get("EMAIL", "")
     PASSWORD = os.environ.get("PASSWORD", "")
 
-    # Cookie 登录
-    COOKIE_NAME   = os.environ.get("COOKIE_NAME", "session_token")
+    # Cookie 登录（如果 COOKIE_NAME 为空，使用 IceHost 默认值）
+    COOKIE_NAME   = os.environ.get("COOKIE_NAME", "").strip() or "remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d"
     COOKIE_VALUE  = os.environ.get("COOKIE_VALUE", "")
-    COOKIE_DOMAIN = os.environ.get("COOKIE_DOMAIN", "")
+    COOKIE_DOMAIN = os.environ.get("COOKIE_DOMAIN", "").strip() or "dash.icehost.pl"
 
     # Discord OAuth 登录
     DISCORD_TOKEN        = os.environ.get("DISCORD_TOKEN", "")
@@ -84,7 +84,7 @@ class Config:
         has_credential = False
         if cls.COOKIE_VALUE:
             has_credential = True
-            log("✅ 配置了 Cookie 登录凭证")
+            log(f"✅ 配置了 Cookie 登录凭证 (Cookie名: {cls.COOKIE_NAME})")
         if cls.EMAIL and cls.PASSWORD:
             has_credential = True
             log("✅ 配置了账号密码登录凭证")
@@ -764,7 +764,7 @@ def login_by_cookie(sb) -> bool:
     if not Config.COOKIE_VALUE:
         log("ℹ️  未配置 Cookie，跳过 Cookie 登录")
         return False
-    log("🍪 尝试 Cookie 登录...")
+    log(f"🍪 尝试 Cookie 登录 (Cookie名: {Config.COOKIE_NAME})...")
     try:
         # 先打开站点，让浏览器建立域名上下文
         sb.open(Config.BASE_URL)
@@ -800,7 +800,7 @@ def login_by_cookie(sb) -> bool:
         current_url = sb.get_current_url()
         log(f"📝 当前URL: {current_url}")
 
-        # 等待可能的 Laravel remember_web 重定向
+        # 等待可能的重定向
         for _ in range(10):
             url_lower = sb.get_current_url().lower()
             if "login" not in url_lower and Config.LOGIN_PATH not in sb.get_current_url():
@@ -815,6 +815,7 @@ def login_by_cookie(sb) -> bool:
         try:
             has_login_form = sb.execute_script("""
                 return !!(document.querySelector('input[name="email"]') ||
+                          document.querySelector('input[name="username"]') ||
                           document.querySelector('input[name="password"]') ||
                           document.querySelector('input[type="password"]'));
             """)
@@ -826,7 +827,7 @@ def login_by_cookie(sb) -> bool:
             log("✅ Cookie 登录成功")
             return True
 
-        log(f"❌ Cookie 登录失败，仍在登录页: {current_url}")
+        log(f"❌ Cookie 登录失败，仍在登录页")
         sb.save_screenshot("cookie_login_fail.png")
         return False
     except Exception as e:
@@ -843,57 +844,112 @@ def login_by_password(sb) -> bool:
         log(f"🌐 打开登录页: {Config.login_url()}")
         sb.uc_open_with_reconnect(Config.login_url(), reconnect_time=5)
         time.sleep(3)
+
+        # 处理 Cloudflare
         if is_cloudflare_present(sb):
             log("🔒 遇到 Cloudflare，尝试通过...")
             if not solve_cloudflare(sb):
                 log("❌ 登录页 Cloudflare 验证失败")
                 return False
-        try:
-            sb.wait_for_element('input[name="email"]', timeout=15)
-        except Exception:
+            time.sleep(2)
+
+        # 等待登录表单出现（支持多种字段名）
+        input_selector = None
+        for sel in ['input[name="username"]', 'input[name="email"]', 'input[name="Email"]',
+                     'input[type="email"]', 'input[type="text"]']:
             try:
-                sb.wait_for_element('input[name="Email"]', timeout=5)
+                sb.wait_for_element(sel, timeout=10)
+                input_selector = sel
+                log(f"✅ 找到用户名输入框: {sel}")
+                break
             except Exception:
-                log("❌ 页面未加载出登录表单")
-                sb.save_screenshot("login_load_fail.png")
-                return False
+                continue
+
+        if not input_selector:
+            log("❌ 页面未加载出登录表单")
+            sb.save_screenshot("login_load_fail.png")
+            return False
+
+        # 关闭 cookie 弹窗等
         try:
             for btn in sb.find_elements("button"):
-                if "Accept" in (btn.text or ""):
+                txt = (btn.text or "").lower()
+                if "accept" in txt or "agree" in txt or "zgadzam" in txt or "akceptuj" in txt:
                     btn.click()
                     time.sleep(0.5)
                     break
         except Exception:
             pass
-        log("📧 填写邮箱...")
-        js_fill_input(sb, 'input[name="email"]', Config.EMAIL)
+
+        # 填写用户名/邮箱
+        log(f"📧 填写用户名: {Config.EMAIL}")
+        js_fill_input(sb, input_selector, Config.EMAIL)
         time.sleep(0.3)
+
+        # 填写密码
         log("🔑 填写密码...")
         js_fill_input(sb, 'input[name="password"]', Config.PASSWORD)
         time.sleep(1)
+
+        # 提交前再次检查 Cloudflare
         if is_cloudflare_present(sb):
             solve_cloudflare(sb)
+            time.sleep(1)
+
+        # 点击提交按钮（支持多种按钮文本）
         log("🖱️  提交登录表单...")
+        submitted = False
+
+        # 方式1：JS 点击所有可能的提交按钮
         try:
-            sb.press_keys('input[name="password"]', '\n')
+            submitted = sb.execute_script("""
+                (function(){
+                    var btns = document.querySelectorAll('button[type="submit"], button');
+                    for (var i = 0; i < btns.length; i++) {
+                        var txt = (btns[i].textContent || '').toLowerCase();
+                        if (txt.includes('zaloguj') || txt.includes('login') || txt.includes('sign in') ||
+                            txt.includes('log in') || txt.includes('submit') || txt.includes('zaloguj się')) {
+                            btns[i].click();
+                            return true;
+                        }
+                    }
+                    return false;
+                })()
+            """)
         except Exception:
+            pass
+
+        # 方式2：回车提交
+        if not submitted:
             try:
-                sb.click('button[type="submit"]')
+                sb.press_keys('input[name="password"]', '\n')
+                submitted = True
             except Exception:
                 pass
+
+        # 方式3：点击 submit 按钮
+        if not submitted:
+            try:
+                sb.click('button[type="submit"]')
+                submitted = True
+            except Exception:
+                pass
+
         log("⏳ 等待登录跳转...")
         for _ in range(20):
             time.sleep(1)
             cur_url = sb.get_current_url().split('?')[0].lower()
-            if Config.LOGIN_PATH not in cur_url and "login" not in cur_url:
+            if "login" not in cur_url and Config.LOGIN_PATH not in cur_url:
                 break
+
         cur_url = sb.get_current_url().lower()
         if "login" in cur_url:
             log("❌ 登录失败，仍在登录页")
             sb.save_screenshot("login_failed.png")
             return False
+
         _current_login_method = LOGIN_METHOD_PASSWORD
-        log(f"✅ 账号密码登录成功！(URL: {sb.get_current_url()})")
+        log(f"✅ 账号密码登录成功！")
         return True
     except Exception as e:
         log(f"❌ 密码登录异常: {e}")
